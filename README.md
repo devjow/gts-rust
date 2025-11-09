@@ -93,68 +93,309 @@ gts = { path = "path/to/gts-rust/gts" }
 
 ### CLI Commands
 
-#### Validate a GTS ID
+All CLI commands support `--path` to specify data directories and `--config` for custom configuration.
+
+#### OP#1 - ID Validation
+
+Verify that a GTS identifier follows the correct syntax.
 
 ```bash
+# Validate a schema ID
 gts validate-id --gts-id "gts.x.core.events.event.v1~"
+
+# Validate an instance ID
+gts validate-id --gts-id "gts.x.core.events.event.v1.0"
+
+# Validate a chained ID
+gts validate-id --gts-id "gts.x.core.events.event.v1~vendor.app._.custom.v2~"
+
+# Invalid ID example
+gts validate-id --gts-id "invalid-id"
 ```
 
-#### Parse a GTS ID
-
-```bash
-gts parse-id --gts-id "gts.x.core.events.event.v1.2~"
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1~",
+  "valid": true,
+  "error": ""
+}
 ```
 
-#### Match ID Against Pattern
+#### OP#2 - ID Extraction
+
+Extract GTS identifiers from JSON objects. This happens automatically when loading files.
 
 ```bash
-gts match-id-pattern --pattern "gts.x.core.events.*" --candidate "gts.x.core.events.event.v1~"
+# List all entities (extracts IDs from all JSON/YAML files)
+gts --path ./examples list --limit 10
 ```
 
-#### Generate UUID
+#### OP#3 - ID Parsing
+
+Decompose a GTS identifier into its constituent parts.
 
 ```bash
+# Parse a simple schema ID
+gts parse-id --gts-id "gts.x.core.events.event.v1~"
+
+# Parse an instance ID with minor version
+gts parse-id --gts-id "gts.vendor.package.namespace.type.v2.5"
+
+# Parse a chained ID
+gts parse-id --gts-id "gts.x.core.events.event.v1~vendor.app._.custom.v2~"
+```
+
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1~",
+  "ok": true,
+  "segments": [
+    {
+      "vendor": "x",
+      "package": "core",
+      "namespace": "events",
+      "type": "event",
+      "ver_major": 1,
+      "ver_minor": null,
+      "is_type": true
+    }
+  ],
+  "error": ""
+}
+```
+
+#### OP#4 - ID Pattern Matching
+
+Match identifiers against patterns with wildcards.
+
+```bash
+# Match with wildcard namespace
+gts match-id-pattern --pattern "gts.x.core.*" --candidate "gts.x.core.events.event.v1~"
+
+# Match specific version range
+gts match-id-pattern --pattern "gts.x.*.events.*.v1~" --candidate "gts.x.core.events.event.v1~"
+
+# No match example
+gts match-id-pattern --pattern "gts.vendor.*" --candidate "gts.x.core.events.event.v1~"
+```
+
+**Output:**
+```json
+{
+  "candidate": "gts.x.core.events.event.v1~",
+  "pattern": "gts.x.core.*",
+  "match": true
+}
+```
+
+#### OP#5 - ID to UUID Mapping
+
+Generate deterministic UUIDs from GTS identifiers.
+
+```bash
+# Generate UUID with major version scope (default)
 gts uuid --gts-id "gts.x.core.events.event.v1~"
+
+# Generate UUID with minor version scope
+gts uuid --gts-id "gts.x.core.events.event.v1.0" --scope minor
+
+# Same major version produces same UUID
+gts uuid --gts-id "gts.x.core.events.event.v1.5" --scope major
 ```
 
-#### Validate Instance
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1~",
+  "uuid": "a3d5e8f1-2b4c-5d6e-8f9a-1b2c3d4e5f6a"
+}
+```
+
+#### OP#6 - Schema Validation
+
+Validate object instances against their corresponding schemas.
 
 ```bash
-gts validate-instance --gts-id "gts.x.core.events.event.v1.0" --path ./data
+# Validate a single instance
+gts --path ./examples validate-instance --gts-id "gts.x.core.events.event.v1.0"
+
+# The system:
+# 1. Loads the instance by ID
+# 2. Finds its schema (via $schema or type field)
+# 3. Validates using JSON Schema validation
 ```
 
-#### Check Schema Compatibility
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1.0",
+  "ok": true
+}
+```
+
+#### OP#7 - Relationship Resolution
+
+Load all schemas and instances, resolve inter-dependencies, and detect broken references.
 
 ```bash
-gts compatibility --old-schema-id "gts.x.core.events.event.v1~" --new-schema-id "gts.x.core.events.event.v2~" --path ./schemas
+# Resolve relationships for an entity
+gts --path ./examples resolve-relationships --gts-id "gts.x.core.events.event.v1.0"
+
+# The system:
+# 1. Loads the entity
+# 2. Extracts all GTS ID references ($ref, nested IDs)
+# 3. Resolves each reference
+# 4. Reports missing or broken references
 ```
 
-#### Cast Instance
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1.0",
+  "ok": true,
+  "refs": [
+    "gts.x.core.events.event.v1~",
+    "gts.x.core.models.user.v1~"
+  ],
+  "missing_refs": [],
+  "error": ""
+}
+```
+
+#### OP#8 - Compatibility Checking
+
+Verify that schemas with different MINOR versions are compatible.
 
 ```bash
-gts cast --from-id "gts.x.core.events.event.v1.0" --to-schema-id "gts.x.core.events.event.v2~" --path ./data
+# Check backward compatibility (v1 -> v2)
+gts --path ./examplescompatibility --old-schema-id "gts.x.core.events.event.v1.1~" \
+                  --new-schema-id "gts.x.core.events.event.v1.2~"
+
+# The system checks:
+# - OP#8.1: Backward compatibility (old instances work with new schema)
+# - OP#8.2: Forward compatibility (new instances work with old schema)
+# - OP#8.3: Full compatibility (both directions compatible)
 ```
 
-#### Query Entities
+**Output:**
+```json
+{
+  "old_schema_id": "gts.x.core.events.event.v1.1~",
+  "new_schema_id": "gts.x.core.events.event.v1.2~",
+  "is_backward_compatible": true,
+  "is_forward_compatible": false,
+  "is_fully_compatible": false,
+  "backward_errors": [],
+  "forward_errors": [
+    "Added required properties: email"
+  ]
+}
+```
+
+#### OP#9 - Version Casting
+
+Transform instances between compatible MINOR versions.
 
 ```bash
-gts query --expr "gts.x.core.events.*[status=active]" --limit 50 --path ./data
+# Cast instance from v1.0 to v2 schema
+gts --path ./examples cast --from-id "gts.x.core.events.event.v1.1~" \
+         --to-schema-id "gts.x.core.events.event.v1.2~"
+
+# The system:
+# 1. Loads source instance and both schemas
+# 2. Checks compatibility
+# 3. Applies transformations (adds defaults, removes extra fields, updates const values)
+# 4. Returns transformed instance
 ```
 
-#### Access Attribute
+**Output:**
+```json
+{
+  "from": "gts.x.core.events.event.v1.0",
+  "to": "gts.x.core.events.event.v1.2~",
+  "direction": "up",
+  "is_backward_compatible": true,
+  "is_forward_compatible": false,
+  "added_properties": ["region"],
+  "removed_properties": [],
+  "casted_entity": {
+    "gtsId": "gts.x.core.events.event.v1.0",
+    "name": "example",
+    "region": "us-east"
+  }
+}
+```
+
+#### OP#10 - Query Execution
+
+Filter identifier collections using the GTS query language.
 
 ```bash
-gts attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp" --path ./data
+# Query with wildcard pattern
+gts --path ./data query --expr "gts.x.core.events.*" --limit 50
+
+# Query with attribute filter
+gts --path ./data query --expr "gts.x.core.events.*[status=active]" --limit 50
+
+# Query schemas only (ending with ~)
+gts --path ./data query --expr "gts.x.*.*.*.v1~" --limit 100
+
+# Query specific namespace
+gts --path ./data query --expr "gts.vendor.package.namespace.*" --limit 20
 ```
 
-#### List Entities
+**Output:**
+```json
+{
+  "error": "",
+  "count": 3,
+  "limit": 50,
+  "results": [
+    {"gtsId": "gts.x.core.events.event.v1~", ...},
+    {"gtsId": "gts.x.core.events.event.v1.0", ...},
+    {"gtsId": "gts.x.core.events.topic.v1~", ...}
+  ]
+}
+```
 
+#### OP#11 - Attribute Access
+
+Retrieve property values and metadata using the attribute selector (`@`).
+
+```bash
+# Access top-level property
+gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@name"
+
+# Access nested property
+gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp" --path ./data
+
+# Access array element
+gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@tags[0]"
+
+# Access schema property
+gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1~@properties.name.type"
+```
+
+**Output:**
+```json
+{
+  "id": "gts.x.core.events.event.v1.0",
+  "path": "metadata.timestamp",
+  "value": "2025-11-09T23:00:00Z",
+  "ok": true
+}
+```
+
+#### Additional Commands
+
+**List Entities:**
 ```bash
 gts list --limit 100 --path ./data
 ```
 
-#### Start HTTP Server
-
+**Start HTTP Server:**
 ```bash
 # Start server without HTTP logging (WARNING level only)
 gts server --host 127.0.0.1 --port 8000 --path ./data
@@ -166,46 +407,354 @@ gts -v server --host 127.0.0.1 --port 8000 --path ./data
 gts -vv server --host 127.0.0.1 --port 8000 --path ./data
 ```
 
-Verbose logging format (matches Python implementation):
+Verbose logging format:
 - **No flag**: WARNING level only (no HTTP request logs)
-- **`-v`**: INFO level - Logs HTTP requests with color-coded output:
-  ```
-  2025-11-07 22:43:17,105 - INFO - GET /match-id-pattern -> 200 in 0.2ms
-  ```
-  - Method (cyan), path (blue), status code (green/yellow/red), duration (magenta)
-  - Colors are automatically disabled when output is not a TTY
+- **`-v`**: INFO level - Logs HTTP requests with color-coded output
 - **`-vv`**: DEBUG level - Additionally logs request/response bodies with pretty-printed JSON
 
-#### Generate OpenAPI Spec
-
+**Generate OpenAPI Spec:**
 ```bash
 gts openapi-spec --out openapi.json --host 127.0.0.1 --port 8000
 ```
 
 ### Library Usage
 
+All operations are available through the `GtsOps` API.
+
+#### Setup
+
 ```rust
-use gts::{GtsID, GtsOps, GtsConfig};
+use gts::{GtsID, GtsOps, GtsConfig, GtsWildcard};
+use serde_json::json;
 
-// Parse and validate GTS IDs
-let id = GtsID::new("gts.x.core.events.event.v1~")?;
-assert!(id.is_type());
-println!("UUID: {}", id.to_uuid());
-
-// Use high-level operations
+// Initialize GTS operations with data paths
 let mut ops = GtsOps::new(
-    Some(vec!["./data".to_string()]),
-    None,
-    0
+    Some(vec!["./data".to_string(), "./schemas".to_string()]),
+    None,  // Optional config file path
+    0      // Verbosity level
+);
+```
+
+#### OP#1 - ID Validation
+
+```rust
+// Validate a GTS ID
+let result = ops.validate_id("gts.x.core.events.event.v1~");
+assert!(result.valid);
+
+// Validate invalid ID
+let result = ops.validate_id("invalid-id");
+assert!(!result.valid);
+assert!(!result.error.is_empty());
+
+// Direct validation without ops
+let is_valid = GtsID::is_valid("gts.x.core.events.event.v1~");
+assert!(is_valid);
+```
+
+#### OP#2 - ID Extraction
+
+```rust
+// ID extraction happens automatically when loading entities
+// Configure which fields to check for IDs:
+let config = GtsConfig {
+    entity_id_fields: vec![
+        "$id".to_string(),
+        "gtsId".to_string(),
+        "id".to_string(),
+    ],
+    schema_id_fields: vec![
+        "$schema".to_string(),
+        "type".to_string(),
+    ],
+};
+
+// Load entities (IDs extracted automatically)
+let results = ops.list(100);
+for entity in results.results {
+    if let Some(id) = entity.get("gtsId") {
+        println!("Found ID: {}", id);
+    }
+}
+```
+
+#### OP#3 - ID Parsing
+
+```rust
+// Parse a GTS ID into components
+let result = ops.parse_id("gts.x.core.events.event.v1.2~");
+assert!(result.ok);
+assert_eq!(result.segments.len(), 1);
+
+let segment = &result.segments[0];
+assert_eq!(segment.vendor, "x");
+assert_eq!(segment.package, "core");
+assert_eq!(segment.namespace, "events");
+assert_eq!(segment.type_name, "event");
+assert_eq!(segment.ver_major, Some(1));
+assert_eq!(segment.ver_minor, Some(2));
+assert!(segment.is_type);
+
+// Parse chained ID
+let result = ops.parse_id("gts.x.core.events.event.v1~vendor.app._.custom.v2~");
+assert_eq!(result.segments.len(), 2);
+
+// Direct parsing
+let id = GtsID::new("gts.x.core.events.event.v1~")?;
+assert_eq!(id.gts_id_segments.len(), 1);
+```
+
+#### OP#4 - ID Pattern Matching
+
+```rust
+// Match ID against wildcard pattern
+let result = ops.match_id_pattern(
+    "gts.x.core.*",
+    "gts.x.core.events.event.v1~"
+);
+assert!(result.is_match);
+
+// No match
+let result = ops.match_id_pattern(
+    "gts.vendor.*",
+    "gts.x.core.events.event.v1~"
+);
+assert!(!result.is_match);
+
+// Direct wildcard matching
+let pattern = GtsWildcard::new("gts.x.*.events.*")?;
+let id = GtsID::new("gts.x.core.events.event.v1~")?;
+assert!(pattern.matches(&id));
+```
+
+#### OP#5 - ID to UUID Mapping
+
+```rust
+// Generate UUID from GTS ID
+let result = ops.uuid("gts.x.core.events.event.v1~", "major");
+assert!(!result.uuid.is_empty());
+
+// Minor scope UUID
+let result = ops.uuid("gts.x.core.events.event.v1.0", "minor");
+
+// Direct UUID generation
+let id = GtsID::new("gts.x.core.events.event.v1~")?;
+let uuid = id.to_uuid();
+println!("UUID: {}", uuid);
+
+// Same major version produces same UUID
+let id1 = GtsID::new("gts.x.core.events.event.v1.0")?;
+let id2 = GtsID::new("gts.x.core.events.event.v1.5")?;
+assert_eq!(id1.to_uuid(), id2.to_uuid());
+```
+
+#### OP#6 - Schema Validation
+
+```rust
+// Validate instance against its schema
+let result = ops.validate_instance("gts.x.core.events.event.v1.0");
+assert!(result.ok);
+
+if !result.ok {
+    println!("Validation error: {}", result.error);
+}
+
+// The system automatically:
+// 1. Loads the instance
+// 2. Finds its schema (via $schema or type field)
+// 3. Validates using JSON Schema
+```
+
+#### OP#7 - Relationship Resolution
+
+```rust
+// Resolve all references for an entity
+let result = ops.resolve_relationships("gts.x.core.events.event.v1.0");
+assert!(result.ok);
+
+// Check for broken references
+if !result.missing_refs.is_empty() {
+    println!("Missing references:");
+    for ref_id in result.missing_refs {
+        println!("  - {}", ref_id);
+    }
+}
+
+// List all references
+for ref_id in result.refs {
+    println!("Reference: {}", ref_id);
+}
+```
+
+#### OP#8 - Compatibility Checking
+
+```rust
+// Check schema compatibility
+let result = ops.compatibility(
+    "gts.x.core.events.event.v1~",
+    "gts.x.core.events.event.v2~"
 );
 
-// Validate an instance
-let result = ops.validate_instance("gts.x.core.events.event.v1.0");
-println!("Valid: {}", result.ok);
+// OP#8.1 - Backward compatibility
+if result.is_backward_compatible {
+    println!("Old instances work with new schema");
+} else {
+    println!("Backward incompatible:");
+    for error in result.backward_errors {
+        println!("  - {}", error);
+    }
+}
 
-// Query entities
-let results = ops.query("gts.x.core.*", 100);
+// OP#8.2 - Forward compatibility
+if result.is_forward_compatible {
+    println!("New instances work with old schema");
+} else {
+    println!("Forward incompatible:");
+    for error in result.forward_errors {
+        println!("  - {}", error);
+    }
+}
+
+// OP#8.3 - Full compatibility
+if result.is_fully_compatible {
+    println!("Fully compatible in both directions");
+}
+```
+
+#### OP#9 - Version Casting
+
+```rust
+// Cast instance to new schema version
+let result = ops.cast(
+    "gts.x.core.events.event.v1.0",
+    "gts.x.core.events.event.v2~"
+);
+
+assert!(result.ok);
+
+// Check what changed
+println!("Direction: {}", result.direction);
+println!("Added properties: {:?}", result.added_properties);
+println!("Removed properties: {:?}", result.removed_properties);
+
+// Get the transformed entity
+if let Some(casted) = result.casted_entity {
+    println!("Casted entity: {}", serde_json::to_string_pretty(&casted)?);
+}
+
+// Check compatibility
+if !result.is_backward_compatible {
+    println!("Warning: Not backward compatible");
+    for reason in result.incompatibility_reasons {
+        println!("  - {}", reason);
+    }
+}
+```
+
+#### OP#10 - Query Execution
+
+```rust
+// Query with wildcard pattern
+let results = ops.query("gts.x.core.events.*", 50);
 println!("Found {} entities", results.count);
+
+for entity in results.results {
+    if let Some(id) = entity.get("gtsId") {
+        println!("  - {}", id);
+    }
+}
+
+// Query with attribute filter
+let results = ops.query("gts.x.core.events.*[status=active]", 100);
+
+// Query schemas only
+let results = ops.query("gts.x.*.*.*.v1~", 100);
+
+// List all entities
+let results = ops.list(1000);
+```
+
+#### OP#11 - Attribute Access
+
+```rust
+// Access entity attribute
+let result = ops.attr("gts.x.core.events.event.v1.0@name");
+assert!(result.ok);
+println!("Name: {}", result.value);
+
+// Access nested property
+let result = ops.attr("gts.x.core.events.event.v1.0@metadata.timestamp");
+
+// Access array element
+let result = ops.attr("gts.x.core.events.event.v1.0@tags[0]");
+
+// Access schema property
+let result = ops.attr("gts.x.core.events.event.v1~@properties.name.type");
+assert_eq!(result.value.as_str(), Some("string"));
+
+// Handle missing attributes
+if !result.ok {
+    println!("Attribute not found: {}", result.error);
+}
+```
+
+#### Complete Example
+
+```rust
+use gts::GtsOps;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize
+    let mut ops = GtsOps::new(
+        Some(vec!["./data".to_string()]),
+        None,
+        0
+    );
+
+    // OP#1: Validate ID
+    let validation = ops.validate_id("gts.x.core.events.event.v1~");
+    assert!(validation.valid);
+
+    // OP#3: Parse ID
+    let parsed = ops.parse_id("gts.x.core.events.event.v1.2~");
+    println!("Vendor: {}", parsed.segments[0].vendor);
+
+    // OP#5: Generate UUID
+    let uuid_result = ops.uuid("gts.x.core.events.event.v1~", "major");
+    println!("UUID: {}", uuid_result.uuid);
+
+    // OP#6: Validate instance
+    let validation = ops.validate_instance("gts.x.core.events.event.v1.0");
+    if validation.ok {
+        println!("Instance is valid");
+    }
+
+    // OP#8: Check compatibility
+    let compat = ops.compatibility(
+        "gts.x.core.events.event.v1~",
+        "gts.x.core.events.event.v2~"
+    );
+    println!("Backward compatible: {}", compat.is_backward_compatible);
+
+    // OP#9: Cast instance
+    let cast = ops.cast(
+        "gts.x.core.events.event.v1.0",
+        "gts.x.core.events.event.v2~"
+    );
+    if let Some(casted) = cast.casted_entity {
+        println!("Casted: {}", serde_json::to_string_pretty(&casted)?);
+    }
+
+    // OP#10: Query entities
+    let results = ops.query("gts.x.core.*", 100);
+    println!("Found {} entities", results.count);
+
+    // OP#11: Access attribute
+    let attr = ops.attr("gts.x.core.events.event.v1.0@name");
+    println!("Name: {}", attr.value);
+
+    Ok(())
+}
 ```
 
 ### HTTP API
