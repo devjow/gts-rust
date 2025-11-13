@@ -29,7 +29,7 @@ See details in [gts/README.md](gts/README.md)
 
 Other GTS spec [Reference Implementation](https://github.com/globaltypesystem/gts-spec/blob/main/README.md#9-reference-implementation-recommendations) recommended features support:
 
-- [ ] **In-memory Instances registry** - simple instances registry with optional validation on GTS registration
+- [ ] **In-memory entities registry** - simple GTS entities registry with optional GTS references validation on entity registration
 - [x] **CLI** - command-line interface for all GTS operations
 - [x] **Web server** - a non-production web-server with REST API for the operations processing and testing
 - [ ] **x-gts-ref** - to support special GTS entity reference annotation in schemas
