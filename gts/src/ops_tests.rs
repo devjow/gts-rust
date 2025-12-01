@@ -123,7 +123,7 @@ mod tests {
             "type": "gts.test.base.v1.0~",
             "name": "Test Instance"
         });
-        ops.add_entity(instance);
+        ops.add_entity(instance, false);
 
         // Test casting
         let result = ops.cast("gts.test.base.v1.0~instance.v1.0", "gts.test.derived.v1.1~");
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gts_schema_graph_result_to_dict() {
+    fn test_struct_to_gts_schema_graph_result_to_dict() {
         use crate::ops::GtsSchemaGraphResult;
 
         let graph = json!({
@@ -1517,7 +1517,7 @@ mod tests {
             }
         });
 
-        ops.add_entity(content);
+        ops.add_entity(content, false);
 
         let result = ops.attr("gts.vendor.package.namespace.type.v1.0#user.name");
         // Just verify it executes
@@ -1533,7 +1533,7 @@ mod tests {
             "name": "test"
         });
 
-        ops.add_entity(content);
+        ops.add_entity(content, false);
 
         let result = ops.attr("gts.vendor.package.namespace.type.v1.0");
         assert_eq!(result.path, "");
@@ -1620,7 +1620,7 @@ mod tests {
                 "id": format!("gts.vendor.package.namespace.type.v1.{}", i),
                 "name": format!("test{}", i)
             });
-            ops.add_entity(content);
+            ops.add_entity(content, false);
         }
 
         let result = ops.list(10);
@@ -1637,7 +1637,7 @@ mod tests {
                 "id": format!("gts.vendor.package.namespace.type.v1.{}", i),
                 "name": format!("test{}", i)
             });
-            ops.add_entity(content);
+            ops.add_entity(content, false);
         }
 
         let result = ops.list(2);
@@ -1677,7 +1677,7 @@ mod tests {
             "name": "test"
         });
 
-        ops.add_entity(content);
+        ops.add_entity(content, false);
 
         let result = ops.validate_instance("gts.vendor.package.namespace.type.v1.0");
         // Just verify it executes

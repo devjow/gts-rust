@@ -37,6 +37,9 @@ Other GTS spec [Reference Implementation](https://github.com/globaltypesystem/gt
 - [ ] **TypeSpec support** - add [typespec.io](https://typespec.io/) files (*.tsp) support
 - [ ] **UUID for instances** - to support UUID as ID in JSON instances
 
+Rust-specific features:
+- [x] Generate GTS schemas from Rust source code, see [gts-macros/README.md](gts-macros/README.md) and [gts-macros-test/README.md](gts-macros-test/README.md)
+
 Technical Backlog:
 
 - [x] **Code coverage** - target is 90%
@@ -67,6 +70,7 @@ Core library providing all GTS functionality:
 Command-line tool and HTTP server:
 
 - **cli.rs** - Full CLI with all commands
+- **gen_schemas.rs** - GTS schema generation from Rust source code
 - **server.rs** - Axum-based HTTP server
 - **main.rs** - Entry point
 

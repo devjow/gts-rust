@@ -1,5 +1,5 @@
 [workspace]
-members = ["gts", "gts-cli"]
+members = ["gts", "gts-cli", "gts-macros", "gts-macros-test"]
 resolver = "2"
 
 [workspace.package]

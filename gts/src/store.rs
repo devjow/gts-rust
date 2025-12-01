@@ -25,6 +25,8 @@ pub enum StoreError {
     InvalidEntity,
     #[error("Schema type_id must end with '~'")]
     InvalidSchemaId,
+    #[error("{0}")]
+    ValidationError(String),
 }
 
 pub trait GtsReader: Send {
@@ -205,6 +207,135 @@ impl GtsStore {
         }
     }
 
+    fn remove_x_gts_ref_fields(&self, schema: &Value) -> Value {
+        // Recursively remove x-gts-ref fields from a schema
+        // This is needed because the jsonschema crate doesn't understand x-gts-ref
+        // and will fail on JSON Pointer references like "/$id"
+        match schema {
+            Value::Object(map) => {
+                let mut new_map = serde_json::Map::new();
+                for (key, value) in map {
+                    if key == "x-gts-ref" {
+                        continue; // Skip x-gts-ref fields
+                    }
+                    new_map.insert(key.clone(), self.remove_x_gts_ref_fields(value));
+                }
+                Value::Object(new_map)
+            }
+            Value::Array(arr) => {
+                Value::Array(arr.iter().map(|v| self.remove_x_gts_ref_fields(v)).collect())
+            }
+            _ => schema.clone(),
+        }
+    }
+
+    fn validate_schema_x_gts_refs(&mut self, gts_id: &str) -> Result<(), StoreError> {
+        if !gts_id.ends_with('~') {
+            return Err(StoreError::SchemaNotFound(format!(
+                "ID '{}' is not a schema (must end with '~')",
+                gts_id
+            )));
+        }
+
+        let schema_entity = self
+            .get(gts_id)
+            .ok_or_else(|| StoreError::SchemaNotFound(gts_id.to_string()))?;
+
+        if !schema_entity.is_schema {
+            return Err(StoreError::SchemaNotFound(format!(
+                "Entity '{}' is not a schema",
+                gts_id
+            )));
+        }
+
+        tracing::info!("Validating schema x-gts-ref fields for {}", gts_id);
+
+        // Validate x-gts-ref constraints in the schema
+        let validator = crate::x_gts_ref::XGtsRefValidator::new();
+        let x_gts_ref_errors = validator.validate_schema(&schema_entity.content, "", None);
+
+        if !x_gts_ref_errors.is_empty() {
+            let error_messages: Vec<String> = x_gts_ref_errors
+                .iter()
+                .map(|err| {
+                    if err.field_path.is_empty() {
+                        err.reason.clone()
+                    } else {
+                        format!("{}: {}", err.field_path, err.reason)
+                    }
+                })
+                .collect();
+            let error_message = format!(
+                "x-gts-ref validation failed: {}",
+                error_messages.join("; ")
+            );
+            return Err(StoreError::ValidationError(error_message));
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_schema(&mut self, gts_id: &str) -> Result<(), StoreError> {
+        if !gts_id.ends_with('~') {
+            return Err(StoreError::SchemaNotFound(format!(
+                "ID '{}' is not a schema (must end with '~')",
+                gts_id
+            )));
+        }
+
+        let schema_entity = self
+            .get(gts_id)
+            .ok_or_else(|| StoreError::SchemaNotFound(gts_id.to_string()))?;
+
+        if !schema_entity.is_schema {
+            return Err(StoreError::SchemaNotFound(format!(
+                "Entity '{}' is not a schema",
+                gts_id
+            )));
+        }
+
+        let schema_content = schema_entity.content.clone();
+        if !schema_content.is_object() {
+            return Err(StoreError::SchemaNotFound(format!(
+                "Schema '{}' content must be a dictionary",
+                gts_id
+            )));
+        }
+
+        tracing::info!("Validating schema {}", gts_id);
+
+        // 1. Validate x-gts-ref fields FIRST (before JSON Schema validation)
+        // This ensures we catch invalid GTS IDs in x-gts-ref before the JSON Schema
+        // compiler potentially fails on them
+        self.validate_schema_x_gts_refs(gts_id)?;
+
+        // 2. Validate against JSON Schema meta-schema
+        // We need to remove x-gts-ref fields before compiling because the jsonschema
+        // crate doesn't understand them and will fail on JSON Pointer references
+        let mut schema_for_validation = self.remove_x_gts_ref_fields(&schema_content);
+
+        // Also remove $id and $schema to avoid URL resolution issues
+        if let Value::Object(ref mut map) = schema_for_validation {
+            map.remove("$id");
+            map.remove("$schema");
+        }
+
+        // For now, we'll do a basic validation by trying to compile the schema
+        jsonschema::JSONSchema::compile(&schema_for_validation).map_err(|e| {
+            StoreError::ValidationError(format!(
+                "JSON Schema validation failed for '{}': {}",
+                gts_id, e
+            ))
+        })?;
+
+        tracing::info!(
+            "Schema {} passed JSON Schema meta-schema validation",
+            gts_id
+        );
+
+        Ok(())
+    }
+
     pub fn validate_instance(&mut self, gts_id: &str) -> Result<(), StoreError> {
         let gid = GtsID::new(gts_id).map_err(|_| StoreError::ObjectNotFound(gts_id.to_string()))?;
 
@@ -243,13 +374,35 @@ impl GtsStore {
 
         let compiled = jsonschema::JSONSchema::compile(&resolved_schema).map_err(|e| {
             tracing::error!("Schema compilation error: {}", e);
-            StoreError::SchemaNotFound(format!("Invalid schema: {}", e))
+            StoreError::ValidationError(format!("Invalid schema: {}", e))
         })?;
 
         compiled.validate(&obj.content).map_err(|e| {
             let errors: Vec<String> = e.map(|err| err.to_string()).collect();
-            StoreError::SchemaNotFound(format!("Validation failed: {}", errors.join(", ")))
+            StoreError::ValidationError(format!("Validation failed: {}", errors.join(", ")))
         })?;
+
+        // Validate x-gts-ref constraints
+        let validator = crate::x_gts_ref::XGtsRefValidator::new();
+        let x_gts_ref_errors = validator.validate_instance(&obj.content, &schema, "");
+
+        if !x_gts_ref_errors.is_empty() {
+            let error_messages: Vec<String> = x_gts_ref_errors
+                .iter()
+                .map(|err| {
+                    if err.field_path.is_empty() {
+                        err.reason.clone()
+                    } else {
+                        format!("{}: {}", err.field_path, err.reason)
+                    }
+                })
+                .collect();
+            let error_message = format!(
+                "x-gts-ref validation failed: {}",
+                error_messages.join("; ")
+            );
+            return Err(StoreError::ValidationError(error_message));
+        }
 
         Ok(())
     }

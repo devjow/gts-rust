@@ -4,6 +4,7 @@ use gts::GtsOps;
 use serde_json::Value;
 use std::io::Write;
 
+use crate::gen_schemas::generate_schemas_from_rust;
 use crate::server::GtsHttpServer;
 
 #[derive(Parser)]
@@ -109,6 +110,15 @@ enum Commands {
         #[arg(long, default_value = "8000")]
         port: u16,
     },
+    /// Generate GTS schemas from Rust source code with #[struct_to_gts_schema] annotations
+    GenerateFromRust {
+        /// Source directory or file to scan for annotated structs
+        #[arg(long)]
+        source: String,
+        /// Output directory for generated schemas (optional: uses paths from macro if not specified)
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 pub async fn run() -> Result<()> {
@@ -201,6 +211,9 @@ pub async fn run() -> Result<()> {
         Commands::List { limit } => {
             let result = ops.get_entities(limit);
             print_json(&Value::Object(result.to_dict()))?;
+        }
+        Commands::GenerateFromRust { source, output } => {
+            generate_schemas_from_rust(&source, output.as_deref())?;
         }
     }
 

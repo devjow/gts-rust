@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     middleware,
     response::IntoResponse,
     routing::{get, post},
@@ -54,6 +54,7 @@ impl GtsHttpServer {
     fn create_router(state: AppState, verbose: u8) -> Router {
         let mut router = Router::new()
             .route("/entities", get(get_entities).post(add_entity))
+            .route("/entities/:gts_id", get(get_entity))
             .route("/entities/bulk", post(add_entities))
             .route("/schemas", post(add_schema))
             .route("/validate-id", get(validate_id))
@@ -140,6 +141,12 @@ struct LimitQuery {
     limit: usize,
 }
 
+#[derive(Deserialize)]
+struct AddEntityQuery {
+    #[serde(default)]
+    validate: bool,
+}
+
 fn default_limit() -> usize {
     100
 }
@@ -172,9 +179,22 @@ async fn get_entities(
     Json(result.to_dict())
 }
 
-async fn add_entity(State(state): State<AppState>, Json(body): Json<Value>) -> impl IntoResponse {
+async fn get_entity(
+    State(state): State<AppState>,
+    Path(gts_id): Path<String>,
+) -> impl IntoResponse {
     let mut ops = state.ops.lock().unwrap();
-    let result = ops.add_entity(body);
+    let result = ops.get_entity(&gts_id);
+    Json(result.to_dict())
+}
+
+async fn add_entity(
+    State(state): State<AppState>,
+    Query(params): Query<AddEntityQuery>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let mut ops = state.ops.lock().unwrap();
+    let result = ops.add_entity(body, params.validate);
     Json(result.to_dict())
 }
 

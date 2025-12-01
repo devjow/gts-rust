@@ -202,7 +202,24 @@ impl GtsEntity {
     }
 
     fn is_json_schema_entity(&self) -> bool {
+        // Check if GTS ID ends with '~' (schema marker)
+        if let Some(ref gts_id) = self.gts_id {
+            if gts_id.id.ends_with('~') {
+                return true;
+            }
+        }
+
+        // Check for $id field ending with '~' (schema marker)
         if let Some(obj) = self.content.as_object() {
+            if let Some(id_value) = obj.get("$id") {
+                if let Some(id_str) = id_value.as_str() {
+                    if id_str.ends_with('~') {
+                        return true;
+                    }
+                }
+            }
+
+            // Check for $schema field
             if let Some(url) = obj.get("$schema") {
                 if let Some(url_str) = url.as_str() {
                     return url_str.starts_with("http://json-schema.org/")

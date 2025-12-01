@@ -1,4 +1,5 @@
 mod cli;
+mod gen_schemas;
 mod logging;
 mod server;
 

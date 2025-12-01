@@ -5,6 +5,7 @@ pub mod ops;
 pub mod path_resolver;
 pub mod schema_cast;
 pub mod store;
+pub mod x_gts_ref;
 
 #[cfg(test)]
 mod gts_tests;
@@ -25,3 +26,4 @@ pub use ops::GtsOps;
 pub use path_resolver::JsonPathResolver;
 pub use schema_cast::{GtsEntityCastResult, SchemaCastError};
 pub use store::{GtsReader, GtsStore, GtsStoreQueryResult, StoreError};
+pub use x_gts_ref::{XGtsRefValidationError, XGtsRefValidator};

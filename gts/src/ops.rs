@@ -194,6 +194,44 @@ impl GtsEntityInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GtsGetEntityResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    pub schema_id: Option<String>,
+    pub is_schema: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<Value>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
+impl GtsGetEntityResult {
+    pub fn to_dict(&self) -> serde_json::Map<String, Value> {
+        let mut map = serde_json::Map::new();
+        map.insert("ok".to_string(), Value::Bool(self.ok));
+        if self.ok {
+            map.insert("id".to_string(), Value::String(self.id.clone()));
+            map.insert(
+                "schema_id".to_string(),
+                self.schema_id
+                    .as_ref()
+                    .map(|s| Value::String(s.clone()))
+                    .unwrap_or(Value::Null),
+            );
+            map.insert("is_schema".to_string(), Value::Bool(self.is_schema));
+            map.insert(
+                "content".to_string(),
+                self.content.clone().unwrap_or(Value::Null),
+            );
+        } else {
+            map.insert("error".to_string(), Value::String(self.error.clone()));
+        }
+        map
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GtsEntitiesListResult {
     pub entities: Vec<GtsEntityInfo>,
     pub count: usize,
@@ -418,7 +456,7 @@ impl GtsOps {
         self.store = GtsStore::new(Some(reader));
     }
 
-    pub fn add_entity(&mut self, content: Value) -> GtsAddEntityResult {
+    pub fn add_entity(&mut self, content: Value, validate: bool) -> GtsAddEntityResult {
         let entity = GtsEntity::new(
             None,
             None,
@@ -441,6 +479,7 @@ impl GtsOps {
             };
         }
 
+        // Register the entity first
         if let Err(e) = self.store.register(entity.clone()) {
             return GtsAddEntityResult {
                 ok: false,
@@ -451,9 +490,37 @@ impl GtsOps {
             };
         }
 
+        let entity_id = entity.gts_id.as_ref().unwrap().id.clone();
+
+        // Always validate schemas
+        if entity.is_schema {
+            if let Err(e) = self.store.validate_schema(&entity_id) {
+                return GtsAddEntityResult {
+                    ok: false,
+                    id: String::new(),
+                    schema_id: None,
+                    is_schema: false,
+                    error: format!("Validation failed: {}", e),
+                };
+            }
+        }
+
+        // If validation is requested, validate the instance as well
+        if validate && !entity.is_schema {
+            if let Err(e) = self.store.validate_instance(&entity_id) {
+                return GtsAddEntityResult {
+                    ok: false,
+                    id: String::new(),
+                    schema_id: None,
+                    is_schema: false,
+                    error: format!("Validation failed: {}", e),
+                };
+            }
+        }
+
         GtsAddEntityResult {
             ok: true,
-            id: entity.gts_id.as_ref().unwrap().id.clone(),
+            id: entity_id,
             schema_id: entity.schema_id,
             is_schema: entity.is_schema,
             error: String::new(),
@@ -462,7 +529,7 @@ impl GtsOps {
 
     pub fn add_entities(&mut self, items: Vec<Value>) -> GtsAddEntitiesResult {
         let results: Vec<GtsAddEntityResult> =
-            items.into_iter().map(|it| self.add_entity(it)).collect();
+            items.into_iter().map(|it| self.add_entity(it, false)).collect();
         let ok = results.iter().all(|r| r.ok);
         GtsAddEntitiesResult { ok, results }
     }
@@ -573,6 +640,29 @@ impl GtsOps {
         }
     }
 
+    pub fn validate_schema(&mut self, gts_id: &str) -> GtsValidationResult {
+        match self.store.validate_schema(gts_id) {
+            Ok(_) => GtsValidationResult {
+                id: gts_id.to_string(),
+                ok: true,
+                error: String::new(),
+            },
+            Err(e) => GtsValidationResult {
+                id: gts_id.to_string(),
+                ok: false,
+                error: e.to_string(),
+            },
+        }
+    }
+
+    pub fn validate_entity(&mut self, gts_id: &str) -> GtsValidationResult {
+        if gts_id.ends_with('~') {
+            self.validate_schema(gts_id)
+        } else {
+            self.validate_instance(gts_id)
+        }
+    }
+
     pub fn schema_graph(&mut self, gts_id: &str) -> GtsSchemaGraphResult {
         let graph = self.store.build_schema_graph(gts_id);
         GtsSchemaGraphResult { graph }
@@ -653,6 +743,27 @@ impl GtsOps {
             selected_entity_field: entity.selected_entity_field,
             selected_schema_id_field: entity.selected_schema_id_field,
             is_schema: entity.is_schema,
+        }
+    }
+
+    pub fn get_entity(&mut self, gts_id: &str) -> GtsGetEntityResult {
+        match self.store.get(gts_id) {
+            Some(entity) => GtsGetEntityResult {
+                ok: true,
+                id: entity.gts_id.as_ref().map(|g| g.id.clone()).unwrap_or_else(|| gts_id.to_string()),
+                schema_id: entity.schema_id.clone(),
+                is_schema: entity.is_schema,
+                content: Some(entity.content.clone()),
+                error: String::new(),
+            },
+            None => GtsGetEntityResult {
+                ok: false,
+                id: String::new(),
+                schema_id: None,
+                is_schema: false,
+                content: None,
+                error: format!("Entity '{}' not found", gts_id),
+            },
         }
     }
 

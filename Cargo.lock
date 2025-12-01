@@ -496,6 +496,7 @@ dependencies = [
  "chrono",
  "clap",
  "gts",
+ "regex",
  "serde",
  "serde_json",
  "tokio",
@@ -503,6 +504,26 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
+name = "gts-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
+name = "gts-macros-test"
+version = "0.1.0"
+dependencies = [
+ "gts-macros",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
