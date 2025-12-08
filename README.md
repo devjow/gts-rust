@@ -277,7 +277,7 @@ Verify that schemas with different MINOR versions are compatible.
 
 ```bash
 # Check backward compatibility (v1 -> v2)
-gts --path ./examplescompatibility --old-schema-id "gts.x.core.events.event.v1.1~" \
+gts --path ./examples compatibility --old-schema-id "gts.x.core.events.event.v1.1~" \
                   --new-schema-id "gts.x.core.events.event.v1.2~"
 
 # The system checks:
@@ -341,16 +341,16 @@ Filter identifier collections using the GTS query language.
 
 ```bash
 # Query with wildcard pattern
-gts --path ./data query --expr "gts.x.core.events.*" --limit 50
+gts --path ./examples query --expr "gts.x.core.events.*" --limit 50
 
 # Query with attribute filter
-gts --path ./data query --expr "gts.x.core.events.*[status=active]" --limit 50
+gts --path ./examples query --expr "gts.x.core.events.*[status=active]" --limit 50
 
 # Query schemas only (ending with ~)
-gts --path ./data query --expr "gts.x.*.*.*.v1~" --limit 100
+gts --path ./examples query --expr "gts.x.*.*.*.v1~" --limit 100
 
 # Query specific namespace
-gts --path ./data query --expr "gts.vendor.package.namespace.*" --limit 20
+gts --path ./examples query --expr "gts.vendor.package.namespace.*" --limit 20
 ```
 
 **Output:**
@@ -373,16 +373,16 @@ Retrieve property values and metadata using the attribute selector (`@`).
 
 ```bash
 # Access top-level property
-gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@name"
+gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@name"
 
 # Access nested property
-gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp" --path ./data
+gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp"
 
 # Access array element
-gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1.0@tags[0]"
+gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@tags[0]"
 
 # Access schema property
-gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1~@properties.name.type"
+gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1~@properties.name.type"
 ```
 
 **Output:**
@@ -399,19 +399,20 @@ gts --path ./data attr --gts-with-path "gts.x.core.events.event.v1~@properties.n
 
 **List Entities:**
 ```bash
-gts list --limit 100 --path ./data
+gts --path ./examples list --limit 100
 ```
 
 **Start HTTP Server:**
 ```bash
 # Start server without HTTP logging (WARNING level only)
-gts server --host 127.0.0.1 --port 8000 --path ./data
+gts --path ./examples server --host 127.0.0.1 --port 8000
+# CURL: curl http://127.0.0.1:8000/entities | jq .
 
 # Start server with HTTP request logging (-v or --verbose)
-gts -v server --host 127.0.0.1 --port 8000 --path ./data
+gts -v --path ./examples server --host 127.0.0.1 --port 8000
 
 # Start server with detailed logging including request/response bodies (-vv)
-gts -vv server --host 127.0.0.1 --port 8000 --path ./data
+gts -vv --path ./examples server --host 127.0.0.1 --port 8000
 ```
 
 Verbose logging format:
@@ -769,7 +770,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Start the server:
 
 ```bash
-gts server --host 127.0.0.1 --port 8000 --path ./data
+gts --path ./examples server --host 127.0.0.1 --port 8000
+# curl http://localhost:8000/entities | jq .
 ```
 
 Example API calls:

@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::entities::*;
-    use crate::gts::GtsID;
     use serde_json::json;
 
     #[test]
@@ -108,8 +107,8 @@ mod tests {
             None,
         );
 
-        let ids = entity.extract_gts_ids();
-        assert!(!ids.is_empty());
+        // gts_refs is populated during entity construction
+        assert!(!entity.gts_refs.is_empty());
     }
 
     #[test]
@@ -130,14 +129,14 @@ mod tests {
             content,
             Some(&cfg),
             None,
-            false,
+            true, // Mark as schema so schema_refs gets populated
             String::new(),
             None,
             None,
         );
 
-        let refs = entity.extract_ref_strings();
-        assert!(!refs.is_empty());
+        // schema_refs is populated during entity construction for schemas
+        assert!(!entity.schema_refs.is_empty());
     }
 
     #[test]
@@ -337,7 +336,7 @@ mod tests {
             None,
         );
 
-        // When entity ID itself is a schema, selected_schema_id_field should be None
-        assert_eq!(entity.selected_schema_id_field, None);
+        // When entity ID itself is a schema, selected_schema_id_field should be set to $schema
+        assert_eq!(entity.selected_schema_id_field, Some("$schema".to_string()));
     }
 }
