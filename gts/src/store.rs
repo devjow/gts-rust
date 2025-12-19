@@ -915,14 +915,14 @@ mod tests {
         // Add schemas which are easier to register
         for i in 0..3 {
             let schema_content = json!({
-                "$id": format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type.v{i}.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                    &format!("gts.vendor.package.namespace.type.v{i}.0~"),
                     &schema_content,
                 )
                 .expect("test");
@@ -992,14 +992,14 @@ mod tests {
         // Add multiple schemas
         for i in 0..3 {
             let schema_content = json!({
-                "$id": format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type.v{i}.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                    &format!("gts.vendor.package.namespace.type.v{i}.0~"),
                     &schema_content,
                 )
                 .expect("test");
@@ -1018,14 +1018,14 @@ mod tests {
         // Add 5 schemas
         for i in 0..5 {
             let schema_content = json!({
-                "$id": format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type.v{i}.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                    &format!("gts.vendor.package.namespace.type.v{i}.0~"),
                     &schema_content,
                 )
                 .expect("test");
@@ -1040,16 +1040,16 @@ mod tests {
 
     #[test]
     fn test_store_error_display() {
-        let error = StoreError::ObjectNotFound("test_id".to_string());
+        let error = StoreError::ObjectNotFound("test_id".to_owned());
         assert!(error.to_string().contains("test_id"));
 
-        let error = StoreError::SchemaNotFound("schema_id".to_string());
+        let error = StoreError::SchemaNotFound("schema_id".to_owned());
         assert!(error.to_string().contains("schema_id"));
 
-        let error = StoreError::EntityNotFound("entity_id".to_string());
+        let error = StoreError::EntityNotFound("entity_id".to_owned());
         assert!(error.to_string().contains("entity_id"));
 
-        let error = StoreError::SchemaForInstanceNotFound("instance_id".to_string());
+        let error = StoreError::SchemaForInstanceNotFound("instance_id".to_owned());
         assert!(error.to_string().contains("instance_id"));
     }
 
@@ -1103,7 +1103,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1321,7 +1321,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1527,7 +1527,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1571,7 +1571,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1586,14 +1586,14 @@ mod tests {
 
         for i in 0..5 {
             let schema = json!({
-                "$id": format!("gts.vendor.package.namespace.type{}.v1.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type{i}.v1.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type{}.v1.0~", i),
+                    &format!("gts.vendor.package.namespace.type{i}.v1.0~"),
                     &schema,
                 )
                 .expect("test");
@@ -1609,13 +1609,13 @@ mod tests {
 
         for i in 0..10 {
             let schema = json!({
-                "$id": format!("gts.vendor.package.namespace.type.v1.{}~", i),
+                "$id": format!("gts.vendor.package.namespace.type.v1.{i}~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             let result = store.register_schema(
-                &format!("gts.vendor.package.namespace.type.v1.{}~", i),
+                &format!("gts.vendor.package.namespace.type.v1.{i}~"),
                 &schema,
             );
             assert!(result.is_ok());
@@ -1672,7 +1672,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1777,7 +1777,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         let result = store.register(entity);
@@ -1876,7 +1876,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -1988,7 +1988,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.top.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.top.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2003,14 +2003,14 @@ mod tests {
 
         for i in 0..3 {
             let schema = json!({
-                "$id": format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type.v{i}.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type.v{}.0~", i),
+                    &format!("gts.vendor.package.namespace.type.v{i}.0~"),
                     &schema,
                 )
                 .expect("test");
@@ -2066,7 +2066,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2085,14 +2085,14 @@ mod tests {
 
         for i in 0..5 {
             let schema = json!({
-                "$id": format!("gts.vendor.package.namespace.type{}.v1.0~", i),
+                "$id": format!("gts.vendor.package.namespace.type{i}.v1.0~"),
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object"
             });
 
             store
                 .register_schema(
-                    &format!("gts.vendor.package.namespace.type{}.v1.0~", i),
+                    &format!("gts.vendor.package.namespace.type{i}.v1.0~"),
                     &schema,
                 )
                 .expect("test");
@@ -2250,7 +2250,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2292,7 +2292,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2375,7 +2375,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2408,8 +2408,8 @@ mod tests {
 
         for i in 0..5 {
             let content = json!({
-                "id": format!("gts.vendor.package.namespace.instance{}.v1.0", i),
-                "name": format!("test{}", i)
+                "id": format!("gts.vendor.package.namespace.instance{i}.v1.0"),
+                "name": format!("test{i}")
             });
 
             let entity = GtsEntity::new(
@@ -2421,7 +2421,7 @@ mod tests {
                 false,
                 String::new(),
                 None,
-                Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+                Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
             );
 
             store.register(entity).expect("test");
@@ -2564,7 +2564,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2577,7 +2577,7 @@ mod tests {
     #[test]
     fn test_gts_store_query_result_serialization_with_error() {
         let result = GtsStoreQueryResult {
-            error: "Test error message".to_string(),
+            error: "Test error message".to_owned(),
             count: 0,
             limit: 10,
             results: vec![],
@@ -2642,7 +2642,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2686,7 +2686,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2769,7 +2769,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2790,8 +2790,8 @@ mod tests {
         let cfg = GtsConfig::default();
         for i in 0..3 {
             let content = json!({
-                "id": format!("gts.vendor.package.namespace.item{}.v1.0", i),
-                "name": format!("item{}", i),
+                "id": format!("gts.vendor.package.namespace.item{i}.v1.0"),
+                "name": format!("item{i}"),
                 "status": if i % 2 == 0 { "active" } else { "inactive" }
             });
 
@@ -2823,15 +2823,15 @@ mod tests {
         for i in 0..3 {
             let content = if i == 0 {
                 json!({
-                    "id": format!("gts.vendor.package.namespace.item{}.v1.0", i),
-                    "name": format!("item{}", i),
+                    "id": format!("gts.vendor.package.namespace.item{i}.v1.0"),
+                    "name": format!("item{i}"),
                     "category": null
                 })
             } else {
                 json!({
-                    "id": format!("gts.vendor.package.namespace.item{}.v1.0", i),
-                    "name": format!("item{}", i),
-                    "category": format!("cat{}", i)
+                    "id": format!("gts.vendor.package.namespace.item{i}.v1.0"),
+                    "name": format!("item{i}"),
+                    "category": format!("cat{i}")
                 })
             };
 
@@ -2922,7 +2922,7 @@ mod tests {
             false,
             String::new(),
             None,
-            Some("gts.vendor.package.namespace.type.v1.0~".to_string()),
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned()),
         );
 
         store.register(entity).expect("test");
@@ -2968,8 +2968,8 @@ mod tests {
         let mut entities = Vec::new();
         for i in 0..3 {
             let content = json!({
-                "id": format!("gts.vendor.package.namespace.item{}.v1.0", i),
-                "name": format!("item{}", i)
+                "id": format!("gts.vendor.package.namespace.item{i}.v1.0"),
+                "name": format!("item{i}")
             });
 
             let entity = GtsEntity::new(

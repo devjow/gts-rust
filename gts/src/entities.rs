@@ -511,8 +511,8 @@ mod tests {
         ]);
 
         let file = GtsFile::new(
-            "/path/to/file.json".to_string(),
-            "file.json".to_string(),
+            "/path/to/file.json".to_owned(),
+            "file.json".to_owned(),
             file_content,
         );
 
@@ -539,8 +539,8 @@ mod tests {
         let file_content = json!({"id": "gts.vendor.package.namespace.type.v1.0"});
 
         let file = GtsFile::new(
-            "/path/to/file.json".to_string(),
-            "file.json".to_string(),
+            "/path/to/file.json".to_owned(),
+            "file.json".to_owned(),
             file_content,
         );
 
@@ -673,7 +673,7 @@ mod tests {
             None,
             None,
             false,
-            "custom_label".to_string(),
+            "custom_label".to_owned(),
             None,
             None,
         );
@@ -709,13 +709,13 @@ mod tests {
     #[test]
     fn test_validation_error_creation() {
         let mut params = std::collections::HashMap::new();
-        params.insert("key".to_string(), json!("value"));
+        params.insert("key".to_owned(), json!("value"));
 
         let error = ValidationError {
-            instance_path: "/path".to_string(),
-            schema_path: "/schema".to_string(),
-            keyword: "required".to_string(),
-            message: "test error".to_string(),
+            instance_path: "/path".to_owned(),
+            schema_path: "/schema".to_owned(),
+            keyword: "required".to_owned(),
+            message: "test error".to_owned(),
             params,
             data: Some(json!({"test": "data"})),
         };
@@ -728,17 +728,17 @@ mod tests {
     #[test]
     fn test_gts_config_entity_id_fields() {
         let cfg = GtsConfig::default();
-        assert!(cfg.entity_id_fields.contains(&"id".to_string()));
-        assert!(cfg.entity_id_fields.contains(&"$id".to_string()));
-        assert!(cfg.entity_id_fields.contains(&"gtsId".to_string()));
+        assert!(cfg.entity_id_fields.contains(&"id".to_owned()));
+        assert!(cfg.entity_id_fields.contains(&"$id".to_owned()));
+        assert!(cfg.entity_id_fields.contains(&"gtsId".to_owned()));
     }
 
     #[test]
     fn test_gts_config_schema_id_fields() {
         let cfg = GtsConfig::default();
-        assert!(cfg.schema_id_fields.contains(&"type".to_string()));
-        assert!(cfg.schema_id_fields.contains(&"$schema".to_string()));
-        assert!(cfg.schema_id_fields.contains(&"gtsTid".to_string()));
+        assert!(cfg.schema_id_fields.contains(&"type".to_owned()));
+        assert!(cfg.schema_id_fields.contains(&"$schema".to_owned()));
+        assert!(cfg.schema_id_fields.contains(&"gtsTid".to_owned()));
     }
 
     #[test]
@@ -747,10 +747,10 @@ mod tests {
 
         let mut validation = ValidationResult::default();
         validation.errors.push(ValidationError {
-            instance_path: "/test".to_string(),
-            schema_path: "/schema/test".to_string(),
-            keyword: "type".to_string(),
-            message: "validation error".to_string(),
+            instance_path: "/test".to_owned(),
+            schema_path: "/schema/test".to_owned(),
+            keyword: "type".to_owned(),
+            message: "validation error".to_owned(),
             params: std::collections::HashMap::new(),
             data: None,
         });
@@ -814,6 +814,6 @@ mod tests {
         );
 
         // When entity ID itself is a schema, selected_schema_id_field should be set to $schema
-        assert_eq!(entity.selected_schema_id_field, Some("$schema".to_string()));
+        assert_eq!(entity.selected_schema_id_field, Some("$schema".to_owned()));
     }
 }

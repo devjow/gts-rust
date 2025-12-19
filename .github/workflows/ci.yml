@@ -1,0 +1,212 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+# Cancel previous runs for the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  SCCACHE_CACHE_SIZE: "2G"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  test:
+    name: Test Suite (${{ matrix.os }}, rust=${{ matrix.rust }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        rust: [ stable ]
+
+    steps:
+      - name: Force LF in working tree (w/a for Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: 'true'
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      # Cache Cargo registry/git + target/ across platforms.
+      - name: Cache Cargo/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.os }}
+
+      # Install sccache (cross-platform)
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      # Use a local disk dir for sccache and cache it with actions/cache (reliable).
+      - name: Prepare sccache dir
+        shell: bash
+        run: |
+          echo "SCCACHE_DIR=$RUNNER_TEMP/sccache" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/sccache"
+
+      - name: Cache sccache artifacts
+        if: runner.os != 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
+      # Probe sccache; if startup fails, fall back to plain rustc (no hard CI failure).
+      - name: Probe sccache & set RUSTC_WRAPPER
+        shell: bash
+        run: |
+          if sccache --start-server >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "sccache failed, falling back to plain rustc"
+            echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+            echo "SCCACHE_OK=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Show rustc version
+        run: rustc -Vv
+
+      # Formatting check (fast fail for style issues)
+      - name: cargo fmt (check)
+        run: cargo fmt --all -- --check
+
+      # Clippy lints across workspace and all targets; fail on warnings
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::perf
+
+      # Unit tests
+      - name: cargo test
+        run: cargo test --workspace --no-fail-fast
+
+      # Print sccache stats when active
+      - name: sccache stats
+        if: env.SCCACHE_OK == '1'
+        run: sccache --show-stats
+
+  security:
+    name: Security (cargo-deny on Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo/target
+        uses: Swatinem/rust-cache@v2
+
+      # Install tools via prebuilt binaries for speed.
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      # Run deny checks but do not fail CI (as requested).
+      - name: cargo deny check
+        run: cargo deny check
+        continue-on-error: true
+
+  coverage:
+    name: Code Coverage (cargo-llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain (with llvm-tools)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: llvm-tools-preview
+
+      - name: Cache Cargo/target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Prepare sccache dir
+        shell: bash
+        run: |
+          echo "SCCACHE_DIR=$RUNNER_TEMP/sccache" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/sccache"
+
+      - name: Cache sccache artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-
+
+      - name: Probe sccache & set RUSTC_WRAPPER
+        shell: bash
+        run: |
+          if sccache --start-server >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "sccache failed, falling back to plain rustc"
+            echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+            echo "SCCACHE_OK=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      # Generate lcov.info for upload.
+      - name: Coverage (lcov)
+        env:
+          RUSTFLAGS: "-C debuginfo=0 --cfg coverage_nightly"
+          CARGO_LLVM_COV_TARGET_DIR: llvm-cov-target
+          CARGO_LLVM_COV_BUILD_DIR: llvm-cov-build
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
+
+      # Upload to Codecov; do not fail CI if Codecov is down/misconfigured.
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          # token: ${{ secrets.CODECOV_TOKEN }}  # Uncomment if required for private repos

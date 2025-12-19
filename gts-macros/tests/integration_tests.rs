@@ -58,11 +58,11 @@ fn test_product_metadata() {
 #[test]
 fn test_user_serialization() {
     let user = User {
-        id: "user-123".to_string(),
-        email: "test@example.com".to_string(),
-        name: "Test User".to_string(),
+        id: "user-123".to_owned(),
+        email: "test@example.com".to_owned(),
+        name: "Test User".to_owned(),
         age: 30,
-        internal_data: Some("internal".to_string()),
+        internal_data: Some("internal".to_owned()),
     };
 
     let json = serde_json::to_string(&user).unwrap();
@@ -73,12 +73,12 @@ fn test_user_serialization() {
 #[test]
 fn test_product_serialization() {
     let product = Product {
-        id: "prod-456".to_string(),
-        name: "Test Product".to_string(),
+        id: "prod-456".to_owned(),
+        name: "Test Product".to_owned(),
         price: 99.99,
-        description: Some("A test product".to_string()),
+        description: Some("A test product".to_owned()),
         in_stock: true,
-        warehouse_location: "Warehouse A".to_string(),
+        warehouse_location: "Warehouse A".to_owned(),
     };
 
     let json = serde_json::to_string(&product).unwrap();
