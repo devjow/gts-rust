@@ -5,8 +5,40 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// Directories that are automatically ignored (e.g., trybuild compile_fail tests)
+const AUTO_IGNORE_DIRS: &[&str] = &["compile_fail"];
+
+/// Reason why a file was skipped
+#[derive(Debug, Clone, Copy)]
+enum SkipReason {
+    ExcludePattern,
+    AutoIgnoredDir,
+    IgnoreDirective,
+}
+
+impl std::fmt::Display for SkipReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExcludePattern => write!(f, "matched --exclude pattern"),
+            Self::AutoIgnoredDir => write!(f, "in auto-ignored directory (compile_fail)"),
+            Self::IgnoreDirective => write!(f, "has // gts:ignore directive"),
+        }
+    }
+}
+
 /// Generate GTS schemas from Rust source code with `#[struct_to_gts_schema]` annotations
-pub fn generate_schemas_from_rust(source: &str, output: Option<&str>) -> Result<()> {
+///
+/// # Arguments
+/// * `source` - Source directory or file to scan
+/// * `output` - Optional output directory override
+/// * `exclude_patterns` - Patterns to exclude (supports simple glob matching)
+/// * `verbose` - Verbosity level (0 = normal, 1+ = show skipped files)
+pub fn generate_schemas_from_rust(
+    source: &str,
+    output: Option<&str>,
+    exclude_patterns: &[String],
+    verbose: u8,
+) -> Result<()> {
     println!("Scanning Rust source files in: {source}");
 
     let source_path = Path::new(source);
@@ -19,6 +51,7 @@ pub fn generate_schemas_from_rust(source: &str, output: Option<&str>) -> Result<
 
     let mut schemas_generated = 0;
     let mut files_scanned = 0;
+    let mut files_skipped = 0;
 
     // Walk through all .rs files
     for entry in WalkDir::new(source_path)
@@ -27,22 +60,52 @@ pub fn generate_schemas_from_rust(source: &str, output: Option<&str>) -> Result<
         .filter_map(Result::ok)
     {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            files_scanned += 1;
-            if let Ok(content) = fs::read_to_string(path) {
-                // Parse the file and extract schema information
-                let results =
-                    extract_and_generate_schemas(&content, output, &source_canonical, path)?;
-                schemas_generated += results.len();
-                for (schema_id, file_path) in results {
-                    println!("  Generated schema: {schema_id} @ {file_path}");
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+
+        // Check if path should be excluded
+        if should_exclude_path(path, exclude_patterns) {
+            files_skipped += 1;
+            if verbose > 0 {
+                println!("  Skipped: {} ({})", path.display(), SkipReason::ExcludePattern);
+            }
+            continue;
+        }
+
+        // Check for auto-ignored directories (e.g., compile_fail)
+        if is_in_auto_ignored_dir(path) {
+            files_skipped += 1;
+            if verbose > 0 {
+                println!("  Skipped: {} ({})", path.display(), SkipReason::AutoIgnoredDir);
+            }
+            continue;
+        }
+
+        files_scanned += 1;
+        if let Ok(content) = fs::read_to_string(path) {
+            // Check for gts:ignore directive
+            if has_ignore_directive(&content) {
+                files_skipped += 1;
+                if verbose > 0 {
+                    println!("  Skipped: {} ({})", path.display(), SkipReason::IgnoreDirective);
                 }
+                continue;
+            }
+
+            // Parse the file and extract schema information
+            let results =
+                extract_and_generate_schemas(&content, output, &source_canonical, path)?;
+            schemas_generated += results.len();
+            for (schema_id, file_path) in results {
+                println!("  Generated schema: {schema_id} @ {file_path}");
             }
         }
     }
 
     println!("\nSummary:");
     println!("  Files scanned: {files_scanned}");
+    println!("  Files skipped: {files_skipped}");
     println!("  Schemas generated: {schemas_generated}");
 
     if schemas_generated == 0 {
@@ -50,6 +113,68 @@ pub fn generate_schemas_from_rust(source: &str, output: Option<&str>) -> Result<
     }
 
     Ok(())
+}
+
+/// Check if a path matches any of the exclude patterns
+fn should_exclude_path(path: &Path, patterns: &[String]) -> bool {
+    let path_str = path.to_string_lossy();
+
+    for pattern in patterns {
+        if matches_glob_pattern(&path_str, pattern) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Simple glob pattern matching
+/// Supports: * (any characters), ** (any path segments)
+fn matches_glob_pattern(path: &str, pattern: &str) -> bool {
+    // Convert glob pattern to regex
+    let regex_pattern = pattern
+        .replace('.', r"\.")
+        .replace("**", "<<DOUBLESTAR>>")
+        .replace('*', "[^/]*")
+        .replace("<<DOUBLESTAR>>", ".*");
+
+    if let Ok(re) = Regex::new(&format!("(^|/){regex_pattern}($|/)")) {
+        re.is_match(path)
+    } else {
+        // Fallback to simple contains check
+        path.contains(pattern)
+    }
+}
+
+/// Check if path is in an auto-ignored directory (e.g., compile_fail)
+fn is_in_auto_ignored_dir(path: &Path) -> bool {
+    path.components().any(|component| {
+        if let Some(name) = component.as_os_str().to_str() {
+            AUTO_IGNORE_DIRS.contains(&name)
+        } else {
+            false
+        }
+    })
+}
+
+/// Check if file content starts with the gts:ignore directive
+fn has_ignore_directive(content: &str) -> bool {
+    // Check first few lines for the directive
+    for line in content.lines().take(10) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Check for the directive (case-insensitive)
+        if trimmed.to_lowercase().starts_with("// gts:ignore") {
+            return true;
+        }
+        // If we hit a non-comment, non-empty line, stop looking
+        if !trimmed.starts_with("//") && !trimmed.starts_with("#!") {
+            break;
+        }
+    }
+    false
 }
 
 /// Extract schema metadata from Rust source and generate JSON files
@@ -216,7 +341,7 @@ fn rust_type_to_json_schema_type(rust_type: &str) -> (bool, &'static str, Option
     let inner_type = if is_optional {
         rust_type
             .strip_prefix("Option<")
-            .and_then(|s| s.strip_suffix(">"))
+            .and_then(|s| s.strip_suffix('>'))
             .unwrap_or(rust_type)
             .trim()
     } else {
@@ -235,4 +360,40 @@ fn rust_type_to_json_schema_type(rust_type: &str) -> (bool, &'static str, Option
     };
 
     (!is_optional, json_type, format)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_matches_glob_pattern() {
+        // Test simple patterns
+        assert!(matches_glob_pattern("src/tests/compile_fail/test.rs", "compile_fail"));
+        assert!(matches_glob_pattern("tests/compile_fail/test.rs", "compile_fail"));
+
+        // Test wildcard patterns
+        assert!(matches_glob_pattern("src/tests/foo.rs", "tests/*"));
+        assert!(matches_glob_pattern("src/examples/bar.rs", "examples/*"));
+
+        // Test double-star patterns
+        assert!(matches_glob_pattern("a/b/c/d/test.rs", "**/test.rs"));
+    }
+
+    #[test]
+    fn test_is_in_auto_ignored_dir() {
+        assert!(is_in_auto_ignored_dir(Path::new("tests/compile_fail/test.rs")));
+        assert!(is_in_auto_ignored_dir(Path::new("src/compile_fail/foo.rs")));
+        assert!(!is_in_auto_ignored_dir(Path::new("src/models.rs")));
+        assert!(!is_in_auto_ignored_dir(Path::new("tests/integration.rs")));
+    }
+
+    #[test]
+    fn test_has_ignore_directive() {
+        assert!(has_ignore_directive("// gts:ignore\nuse foo::bar;"));
+        assert!(has_ignore_directive("// GTS:IGNORE\nuse foo::bar;"));
+        assert!(has_ignore_directive("//! Module doc\n// gts:ignore\nuse foo::bar;"));
+        assert!(!has_ignore_directive("use foo::bar;\n// gts:ignore"));
+        assert!(!has_ignore_directive("use foo::bar;"));
+    }
 }

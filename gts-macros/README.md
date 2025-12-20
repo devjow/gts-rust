@@ -121,8 +121,32 @@ gts generate-from-rust --source src/
 # Override output directory
 gts generate-from-rust --source src/ --output schemas/
 
+# Exclude specific directories (can be used multiple times)
+gts generate-from-rust --source . --exclude "tests/*" --exclude "examples/*"
+
 # Using cargo
 cargo run --bin gts -- generate-from-rust --source src/
+```
+
+### Excluding Files
+
+The CLI provides multiple ways to exclude files from scanning:
+
+**1. `--exclude` option** (supports glob patterns):
+```bash
+gts generate-from-rust --source . --exclude "tests/*" --exclude "benches/*"
+```
+
+**2. Auto-ignored directories**: The following directories are automatically skipped:
+- `compile_fail/` - trybuild compile-fail tests
+
+**3. `// gts:ignore` directive**: Add this comment at the top of any `.rs` file:
+```rust
+// gts:ignore
+//! This file will be skipped by the CLI
+
+use gts_macros::struct_to_gts_schema;
+// ...
 ```
 
 ### What the CLI Does
