@@ -225,9 +225,11 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
     }
 
     // Build the complete schema
+    // The $id uses the URI format "gts://gts.x.y.z..." for JSON Schema compatibility
     let struct_name = &input.ident;
+    let schema_id_uri = format!("gts://{}", args.schema_id);
     let mut schema = serde_json::json!({
-        "$id": args.schema_id,
+        "$id": schema_id_uri,
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": struct_name.to_string(),
         "type": "object",

@@ -53,9 +53,9 @@ pub struct Product {
 
 #[test]
 fn test_schema_json_contains_id() {
-    // Verify GTS_SCHEMA_JSON contains proper $id equal to schema_id
-    assert!(EventTopic::GTS_SCHEMA_JSON.contains(r#""$id": "gts.x.core.events.topic.v1~""#));
-    assert!(Product::GTS_SCHEMA_JSON.contains(r#""$id": "gts.x.test.entities.product.v1~""#));
+    // Verify GTS_SCHEMA_JSON contains proper $id with URI prefix "gts://"
+    assert!(EventTopic::GTS_SCHEMA_JSON.contains(r#""$id": "gts://gts.x.core.events.topic.v1~""#));
+    assert!(Product::GTS_SCHEMA_JSON.contains(r#""$id": "gts://gts.x.test.entities.product.v1~""#));
 }
 
 #[test]
@@ -92,15 +92,18 @@ fn test_schema_json_is_valid_json() {
         serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let product_schema: serde_json::Value = serde_json::from_str(Product::GTS_SCHEMA_JSON).unwrap();
 
-    // Verify key fields
-    assert_eq!(topic_schema["$id"], "gts.x.core.events.topic.v1~");
+    // Verify key fields - $id now uses the "gts://" URI prefix
+    assert_eq!(topic_schema["$id"], "gts://gts.x.core.events.topic.v1~");
     assert_eq!(topic_schema["type"], "object");
     assert_eq!(
         topic_schema["$schema"],
         "http://json-schema.org/draft-07/schema#"
     );
 
-    assert_eq!(product_schema["$id"], "gts.x.test.entities.product.v1~");
+    assert_eq!(
+        product_schema["$id"],
+        "gts://gts.x.test.entities.product.v1~"
+    );
     assert_eq!(product_schema["type"], "object");
 }
 
@@ -251,32 +254,6 @@ fn test_product_serialization() {
 // Tests for instance serialization and schema validation
 // =============================================================================
 
-/// Prepare a GTS schema for validation with the jsonschema crate.
-/// This is temporary hack for `<https://github.com/GlobalTypeSystem/gts-spec/issues/24>`
-/// TODO: Remove this once the issue is fixed.
-///
-/// The jsonschema crate requires $id to be a valid URL, but GTS uses
-/// custom identifiers like "gts.x.test.entities.user.v1~".
-/// This function adds a "gts://" prefix to make it a valid URL.
-///
-/// # Panics
-/// Panics if `schema_str` is not valid JSON.
-fn prepare_gts_type_schema_for_validation(schema_str: &str) -> serde_json::Value {
-    let mut schema: serde_json::Value = serde_json::from_str(schema_str).unwrap();
-    if let serde_json::Value::Object(ref mut map) = schema {
-        // If $id starts with "gts.", add "gts://" prefix to make it a valid URL
-        if let Some(id) = map.get("$id").and_then(|v| v.as_str()) {
-            if id.starts_with("gts.") {
-                map.insert(
-                    "$id".to_owned(),
-                    serde_json::Value::String(format!("gts:{id}")),
-                );
-            }
-        }
-    }
-    schema
-}
-
 #[test]
 fn test_event_topic_instance_validates_against_schema() {
     let topic = EventTopic {
@@ -291,8 +268,8 @@ fn test_event_topic_instance_validates_against_schema() {
     // Serialize the instance
     let instance_json = serde_json::to_value(&topic).unwrap();
 
-    // Compile the schema (removing $id/$schema for jsonschema crate compatibility)
-    let schema = prepare_gts_type_schema_for_validation(EventTopic::GTS_SCHEMA_JSON);
+    // Compile the schema - the $id now uses "gts:" prefix which is a valid URI
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     // Validate the instance against the schema
@@ -314,7 +291,7 @@ fn test_product_instance_validates_against_schema() {
     };
 
     let instance_json = serde_json::to_value(&product).unwrap();
-    let schema = prepare_gts_type_schema_for_validation(Product::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(Product::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -338,7 +315,7 @@ fn test_product_instance_with_absent_optional_field_validates() {
         // description is absent (not null) - this is valid for optional fields
     });
 
-    let schema = prepare_gts_type_schema_for_validation(Product::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(Product::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -360,7 +337,7 @@ fn test_optional_field_as_null_fails_validation() {
         "in_stock": true
     });
 
-    let schema = prepare_gts_type_schema_for_validation(Product::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(Product::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -378,7 +355,7 @@ fn test_invalid_instance_missing_required_field() {
         // Missing: retention, ordering (required fields)
     });
 
-    let schema = prepare_gts_type_schema_for_validation(EventTopic::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -401,7 +378,7 @@ fn test_invalid_instance_wrong_type() {
         "ordering": "global"
     });
 
-    let schema = prepare_gts_type_schema_for_validation(EventTopic::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -423,7 +400,7 @@ fn test_instance_with_extra_fields_validates() {
         "another_extra": 42
     });
 
-    let schema = prepare_gts_type_schema_for_validation(EventTopic::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
@@ -529,7 +506,7 @@ fn test_multiple_instances_validate_independently() {
         },
     ];
 
-    let schema = prepare_gts_type_schema_for_validation(EventTopic::GTS_SCHEMA_JSON);
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     for (i, topic) in topics.iter().enumerate() {
@@ -736,4 +713,68 @@ fn test_entity_and_gts_id_vendor_package_namespace_match() {
         assert_eq!(entity_seg.ver_minor, direct_seg.ver_minor);
         assert_eq!(entity_seg.is_type, direct_seg.is_type);
     }
+}
+
+// =============================================================================
+// Tests for gts: URI prefix in JSON Schema $id field
+// =============================================================================
+
+#[test]
+fn test_schema_json_id_uses_uri_prefix() {
+    // The generated schema JSON should have $id with gts:// prefix for URI compatibility
+    let schema: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
+    let id = schema["$id"].as_str().unwrap();
+
+    // $id should start with "gts://" prefix (NOT just "gts:")
+    assert!(
+        id.starts_with("gts://"),
+        "$id should start with 'gts://' prefix"
+    );
+    assert!(
+        !id.starts_with("gts:gts."),
+        "$id should NOT use 'gts:' prefix (must be 'gts://')"
+    );
+    // The full ID should be "gts://gts.x.core.events.topic.v1~"
+    assert_eq!(id, "gts://gts.x.core.events.topic.v1~");
+}
+
+#[test]
+fn test_gts_entity_strips_uri_prefix_from_schema() {
+    // When GtsEntity parses a schema with gts:// prefix in $id, the stored ID should be normalized
+    let schema_json: serde_json::Value = serde_json::from_str(EventTopic::GTS_SCHEMA_JSON).unwrap();
+    let cfg = GtsConfig::default();
+
+    let entity = GtsEntity::new(
+        None,
+        None,
+        &schema_json,
+        Some(&cfg),
+        None,
+        true,
+        "EventTopic".to_owned(),
+        None,
+        None,
+    );
+
+    // The GTS ID should have the gts:// prefix stripped (entities.rs strips gts:// from $id field)
+    let gts_id = entity.gts_id.as_ref().expect("Entity should have a GTS ID");
+    assert_eq!(
+        gts_id.id, "gts.x.core.events.topic.v1~",
+        "GTS ID should not contain 'gts://' prefix"
+    );
+}
+
+#[test]
+fn test_gts_id_does_not_accept_uri_prefix() {
+    // GtsID::new should NOT accept IDs with gts:// or gts: prefix directly
+    // The gts:// prefix is ONLY for JSON Schema $id field and must be stripped before parsing
+    assert!(GtsID::new("gts://gts.x.core.events.topic.v1~").is_err());
+    assert!(!GtsID::is_valid("gts://gts.x.core.events.topic.v1~"));
+
+    // "gts:" (without //) is also not valid
+    assert!(GtsID::new("gts:gts.x.core.events.topic.v1~").is_err());
+    assert!(!GtsID::is_valid("gts:gts.x.core.events.topic.v1~"));
+
+    // Regular GTS IDs should work
+    assert!(GtsID::is_valid("gts.x.core.events.topic.v1~"));
 }

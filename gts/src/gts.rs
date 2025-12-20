@@ -5,6 +5,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const GTS_PREFIX: &str = "gts.";
+/// URI-compatible prefix for GTS identifiers in JSON Schema `$id` field (e.g., `gts://gts.x.y.z...`).
+/// This is ONLY used for JSON Schema serialization/deserialization, not for GTS ID parsing.
+pub const GTS_URI_PREFIX: &str = "gts://";
 static GTS_NS: LazyLock<Uuid> = LazyLock::new(|| Uuid::new_v5(&Uuid::NAMESPACE_URL, b"gts"));
 
 /// Validates a GTS segment token without regex for better performance.

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::gts::GtsID;
+use crate::gts::{GtsID, GTS_URI_PREFIX};
 use crate::path_resolver::JsonPathResolver;
 use crate::schema_cast::{GtsEntityCastResult, SchemaCastError};
 
@@ -210,6 +210,7 @@ impl GtsEntity {
         }
 
         // Check for $id field ending with '~' (schema marker)
+        // Note: $id may be in URI format "gts://gts.x.y.z...~" for JSON Schema compatibility
         if let Some(obj) = self.content.as_object() {
             if let Some(id_value) = obj.get("$id") {
                 if let Some(id_str) = id_value.as_str() {
@@ -219,12 +220,13 @@ impl GtsEntity {
                 }
             }
 
-            // Check for $schema field
+            // Check for $schema field (standard JSON Schema URLs)
             if let Some(url) = obj.get("$schema") {
                 if let Some(url_str) = url.as_str() {
                     return url_str.starts_with("http://json-schema.org/")
                         || url_str.starts_with("https://json-schema.org/")
                         || url_str.starts_with("gts://")
+                        || url_str.starts_with("gts:")
                         || url_str.starts_with("gts.");
                 }
             }
@@ -399,8 +401,16 @@ impl GtsEntity {
         if let Some(obj) = self.content.as_object() {
             if let Some(v) = obj.get(field) {
                 if let Some(s) = v.as_str() {
-                    if !s.trim().is_empty() {
-                        return Some(s.to_owned());
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        // Strip the "gts://" URI prefix ONLY for $id field (JSON Schema compatibility)
+                        // The gts:// prefix is ONLY valid in the $id field of JSON Schema
+                        let normalized = if field == "$id" {
+                            trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed)
+                        } else {
+                            trimmed
+                        };
+                        return Some(normalized.to_owned());
                     }
                 }
             }
@@ -822,5 +832,189 @@ mod tests {
 
         // When entity ID itself is a schema, selected_schema_id_field should be set to $schema
         assert_eq!(entity.selected_schema_id_field, Some("$schema".to_owned()));
+    }
+
+    // =============================================================================
+    // Tests for URI prefix "gts:" in JSON Schema $id field
+    // The gts: prefix is used in JSON Schema for URI compatibility.
+    // GtsEntity strips it when parsing so the GtsID works with normal "gts." format.
+    // =============================================================================
+
+    #[test]
+    fn test_entity_with_gts_uri_prefix_in_id() {
+        // Test that the "gts://" prefix is stripped from JSON Schema $id field
+        let content = json!({
+            "$id": "gts://gts.vendor.package.namespace.type.v1.0~",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object"
+        });
+
+        let cfg = GtsConfig::default();
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            Some(&cfg),
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        // The gts_id should have the prefix stripped
+        let gts_id = entity.gts_id.as_ref().expect("Entity should have a GTS ID");
+        assert_eq!(gts_id.id, "gts.vendor.package.namespace.type.v1.0~");
+        assert!(entity.is_schema, "Entity should be detected as a schema");
+    }
+
+    #[test]
+    fn test_entity_schema_id_extraction() {
+        // Test that schema_id is correctly extracted from the "type" field
+        // Note: The instance segment must be a valid GTS segment (vendor.package.namespace.type.version)
+        // The gts: prefix is ONLY used in $id field, NOT in id/type fields
+        let content = json!({
+            "id": "gts.vendor.package.namespace.type.v1~other.app.data.item.v1.0",
+            "type": "gts.vendor.package.namespace.type.v1~"
+        });
+
+        let cfg = GtsConfig::default();
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            Some(&cfg),
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        let gts_id = entity.gts_id.as_ref().expect("Entity should have a GTS ID");
+        assert_eq!(
+            gts_id.id,
+            "gts.vendor.package.namespace.type.v1~other.app.data.item.v1.0"
+        );
+
+        let schema_id = entity
+            .schema_id
+            .as_ref()
+            .expect("Entity should have a schema ID");
+        assert_eq!(schema_id, "gts.vendor.package.namespace.type.v1~");
+    }
+
+    #[test]
+    fn test_is_json_schema_with_standard_schema() {
+        // Test that entities with standard $schema URLs are detected as schemas
+        let content = json!({
+            "$id": "gts://gts.vendor.package.namespace.type.v1.0~",
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        });
+
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            None,
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        assert!(
+            entity.is_schema,
+            "Entity with $schema should be detected as schema"
+        );
+    }
+
+    #[test]
+    fn test_gts_colon_prefix_not_valid_in_id_field() {
+        // "gts:" (without //) is NOT a valid prefix - only "gts://" is valid
+        // When $id has "gts:" prefix (not "gts://"), it should NOT be stripped
+        let content = json!({
+            "$id": "gts:gts.vendor.package.namespace.type.v1.0~",
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        });
+
+        let cfg = GtsConfig::default();
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            Some(&cfg),
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        // With "gts:" prefix (not "gts://"), the ID is not stripped and won't be valid
+        // The entity should NOT have a valid GTS ID
+        assert!(
+            entity.gts_id.is_none(),
+            "gts: prefix (without //) should not be stripped, resulting in invalid GTS ID"
+        );
+    }
+
+    #[test]
+    fn test_gts_colon_prefix_not_valid_in_other_fields() {
+        // "gts:" prefix should never appear in fields other than $id
+        // These values should be treated as-is (not stripped) and won't be valid GTS IDs
+        let content = json!({
+            "id": "gts:gts.vendor.package.namespace.type.v1.0",
+            "type": "gts:gts.vendor.package.namespace.type.v1~"
+        });
+
+        let cfg = GtsConfig::default();
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            Some(&cfg),
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        // The entity should NOT have a valid GTS ID since "gts:" prefix is not stripped
+        assert!(
+            entity.gts_id.is_none(),
+            "gts: prefix in 'id' field should not be valid"
+        );
+    }
+
+    #[test]
+    fn test_gts_uri_prefix_only_stripped_from_dollar_id() {
+        // Only $id field should have gts:// prefix stripped
+        // The "id" field should NOT have the prefix stripped
+        let content = json!({
+            "id": "gts://gts.vendor.package.namespace.type.v1.0"
+        });
+
+        let cfg = GtsConfig::default();
+        let entity = GtsEntity::new(
+            None,
+            None,
+            &content,
+            Some(&cfg),
+            None,
+            false,
+            String::new(),
+            None,
+            None,
+        );
+
+        // The "id" field is not $id, so the gts:// prefix is NOT stripped
+        // The value "gts://gts.vendor..." is not a valid GTS ID
+        assert!(
+            entity.gts_id.is_none(),
+            "gts:// prefix in 'id' field (not $id) should not be stripped"
+        );
     }
 }
