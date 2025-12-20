@@ -40,11 +40,7 @@ impl From<&crate::gts::GtsIdSegment> for GtsIdSegmentInfo {
             package: seg.package.clone(),
             namespace: seg.namespace.clone(),
             type_name: seg.type_name.clone(),
-            ver_major: if seg.ver_major > 0 {
-                Some(seg.ver_major)
-            } else {
-                None
-            },
+            ver_major: Some(seg.ver_major),
             ver_minor: seg.ver_minor,
             is_type: seg.is_type,
         }
@@ -624,6 +620,16 @@ mod tests {
         let result = ops.parse_id("invalid");
         assert!(result.segments.is_empty());
         assert!(!result.error.is_empty());
+    }
+
+    #[test]
+    fn test_parse_id_version_zero() {
+        let ops = GtsOps::new(None, None, 0);
+        let result = ops.parse_id("gts.x.pkg.ns.type.v0~");
+        assert!(result.ok);
+        assert_eq!(result.segments.len(), 1);
+        assert_eq!(result.segments[0].ver_major, Some(0));
+        assert_eq!(result.segments[0].ver_minor, None);
     }
 
     #[test]
