@@ -35,7 +35,7 @@ pub struct GtsFile {
 }
 
 impl GtsFile {
-    #[must_use] 
+    #[must_use]
     pub fn new(path: String, name: String, content: Value) -> Self {
         let sequence_content: HashMap<usize, Value> = if let Some(arr) = content.as_array() {
             arr.iter()
@@ -118,7 +118,7 @@ pub struct GtsEntity {
 
 impl GtsEntity {
     #[allow(clippy::too_many_arguments)]
-    #[must_use] 
+    #[must_use]
     pub fn new(
         file: Option<GtsFile>,
         list_sequence: Option<usize>,
@@ -232,7 +232,7 @@ impl GtsEntity {
         false
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn resolve_path(&self, path: &str) -> JsonPathResolver {
         let gts_id = self
             .gts_id

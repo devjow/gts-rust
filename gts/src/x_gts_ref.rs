@@ -99,7 +99,7 @@ pub struct XGtsRefValidationError {
 }
 
 impl XGtsRefValidationError {
-    #[must_use] 
+    #[must_use]
     pub fn new(field_path: String, value: String, ref_pattern: String, reason: String) -> Self {
         Self {
             field_path,
@@ -145,7 +145,7 @@ impl XGtsRefValidator {
     ///
     /// # Returns
     /// List of validation errors (empty if valid)
-    #[must_use] 
+    #[must_use]
     pub fn validate_instance(
         &self,
         instance: &Value,
@@ -229,7 +229,7 @@ impl XGtsRefValidator {
     ///
     /// # Returns
     /// List of validation errors (empty if valid)
-    #[must_use] 
+    #[must_use]
     pub fn validate_schema(
         &self,
         schema: &Value,
@@ -380,9 +380,7 @@ impl XGtsRefValidator {
                 field_path.to_owned(),
                 ref_pattern.to_owned(),
                 ref_pattern.to_owned(),
-                format!(
-                    "Invalid x-gts-ref value: '{ref_pattern}' must start with 'gts.' or '/'"
-                ),
+                format!("Invalid x-gts-ref value: '{ref_pattern}' must start with 'gts.' or '/'"),
             ))
         }
     }

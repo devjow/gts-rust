@@ -323,12 +323,12 @@ impl GtsID {
         })
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_type(&self) -> bool {
         self.id.ends_with('~')
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_type_id(&self) -> Option<String> {
         if self.gts_id_segments.len() < 2 {
             return None;
@@ -525,7 +525,8 @@ impl GtsWildcard {
         if p.contains('*') && !p.ends_with(".*") && !p.ends_with("~*") {
             return Err(GtsError::InvalidWildcard {
                 pattern: pattern.to_owned(),
-                cause: "The wildcard '*' token is allowed only at the end of the pattern".to_owned(),
+                cause: "The wildcard '*' token is allowed only at the end of the pattern"
+                    .to_owned(),
             });
         }
 
@@ -673,7 +674,7 @@ mod tests {
         let (gts, path) =
             GtsID::split_at_path("gts.x.core.events.event.v1~@field.subfield").expect("test");
         assert_eq!(gts, "gts.x.core.events.event.v1~");
-        assert_eq!(path, Some("field.subfield".to_string()));
+        assert_eq!(path, Some("field.subfield".to_owned()));
     }
 
     #[test]
@@ -791,7 +792,7 @@ mod tests {
         let (gts, path) =
             GtsID::split_at_path("gts.x.core.events.event.v1~@field@subfield").expect("test");
         assert_eq!(gts, "gts.x.core.events.event.v1~");
-        assert_eq!(path, Some("field@subfield".to_string()));
+        assert_eq!(path, Some("field@subfield".to_owned()));
     }
 
     #[test]
@@ -869,7 +870,7 @@ mod tests {
     #[test]
     fn test_gts_id_display_trait() {
         let id = GtsID::new("gts.x.core.events.event.v1~").expect("test");
-        assert_eq!(format!("{}", id), "gts.x.core.events.event.v1~");
+        assert_eq!(format!("{id}"), "gts.x.core.events.event.v1~");
     }
 
     #[test]
@@ -888,7 +889,7 @@ mod tests {
     #[test]
     fn test_gts_wildcard_display_trait() {
         let pattern = GtsWildcard::new("gts.x.core.events.*").expect("test");
-        assert_eq!(format!("{}", pattern), "gts.x.core.events.*");
+        assert_eq!(format!("{pattern}"), "gts.x.core.events.*");
     }
 
     #[test]

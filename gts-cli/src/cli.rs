@@ -117,6 +117,10 @@ enum Commands {
         /// Output directory for generated schemas (optional: uses paths from macro if not specified)
         #[arg(long)]
         output: Option<String>,
+        /// Exclude patterns (can be specified multiple times). Supports glob patterns.
+        /// Example: --exclude "tests/*" --exclude "examples/*"
+        #[arg(long, action = clap::ArgAction::Append)]
+        exclude: Vec<String>,
     },
 }
 
@@ -211,8 +215,12 @@ pub async fn run() -> Result<()> {
             let result = ops.get_entities(limit);
             print_result(&result)?;
         }
-        Commands::GenerateFromRust { source, output } => {
-            generate_schemas_from_rust(&source, output.as_deref())?;
+        Commands::GenerateFromRust {
+            source,
+            output,
+            exclude,
+        } => {
+            generate_schemas_from_rust(&source, output.as_deref(), &exclude, cli.verbose)?;
         }
     }
 

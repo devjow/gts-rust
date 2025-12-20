@@ -134,7 +134,7 @@ impl GtsEntityCastResult {
         })
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn infer_direction(from_id: &str, to_id: &str) -> String {
         if let (Ok(gid_from), Ok(gid_to)) = (GtsID::new(from_id), GtsID::new(to_id)) {
             if let (Some(from_seg), Some(to_seg)) = (
@@ -177,7 +177,11 @@ impl GtsEntityCastResult {
         s.clone()
     }
 
-    #[allow(clippy::type_complexity, clippy::too_many_lines, clippy::cognitive_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        clippy::too_many_lines,
+        clippy::cognitive_complexity
+    )]
     fn cast_instance_to_schema(
         instance: &Map<String, Value>,
         schema: &Value,
@@ -367,7 +371,7 @@ impl GtsEntityCastResult {
         Ok((result, added, removed, incompatibility_reasons))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn flatten_schema(schema: &Value) -> Value {
         let mut result = Map::new();
         result.insert("properties".to_owned(), Value::Object(Map::new()));
@@ -471,9 +475,7 @@ impl GtsEntityCastResult {
                 "Property '{prop}' added {min_key} constraint: {new_m}"
             ));
         } else if !check_tightening && old_min.is_some() && new_min.is_none() {
-            errors.push(format!(
-                "Property '{prop}' removed {min_key} constraint"
-            ));
+            errors.push(format!("Property '{prop}' removed {min_key} constraint"));
         }
 
         // Check maximum constraint
@@ -495,9 +497,7 @@ impl GtsEntityCastResult {
                 "Property '{prop}' added {max_key} constraint: {new_m}"
             ));
         } else if !check_tightening && old_max.is_some() && new_max.is_none() {
-            errors.push(format!(
-                "Property '{prop}' removed {max_key} constraint"
-            ));
+            errors.push(format!("Property '{prop}' removed {max_key} constraint"));
         }
 
         errors
@@ -551,7 +551,7 @@ impl GtsEntityCastResult {
         errors
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn check_backward_compatibility(
         old_schema: &Value,
         new_schema: &Value,
@@ -559,7 +559,7 @@ impl GtsEntityCastResult {
         Self::check_schema_compatibility(old_schema, new_schema, true)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn check_forward_compatibility(
         old_schema: &Value,
         new_schema: &Value,
@@ -642,9 +642,7 @@ impl GtsEntityCastResult {
 
                 if let (Some(ot), Some(nt)) = (old_type, new_type) {
                     if ot != nt {
-                        errors.push(format!(
-                            "Property '{prop}' type changed from {ot} to {nt}"
-                        ));
+                        errors.push(format!("Property '{prop}' type changed from {ot} to {nt}"));
                     }
                 }
 
@@ -669,9 +667,7 @@ impl GtsEntityCastResult {
                         if !added_enum_values.is_empty() {
                             let values: Vec<_> =
                                 added_enum_values.iter().map(|s| s.as_str()).collect();
-                            errors.push(format!(
-                                "Property '{prop}' added enum values: {values:?}"
-                            ));
+                            errors.push(format!("Property '{prop}' added enum values: {values:?}"));
                         }
                     } else {
                         // Forward: cannot remove enum values
@@ -680,9 +676,8 @@ impl GtsEntityCastResult {
                         if !removed_enum_values.is_empty() {
                             let values: Vec<_> =
                                 removed_enum_values.iter().map(|s| s.as_str()).collect();
-                            errors.push(format!(
-                                "Property '{prop}' removed enum values: {values:?}"
-                            ));
+                            errors
+                                .push(format!("Property '{prop}' removed enum values: {values:?}"));
                         }
                     }
                 }
@@ -753,10 +748,10 @@ mod tests {
 
     #[test]
     fn test_schema_cast_error_display() {
-        let error = SchemaCastError::InternalError("test error".to_string());
+        let error = SchemaCastError::InternalError("test error".to_owned());
         assert!(error.to_string().contains("test error"));
 
-        let error = SchemaCastError::CastError("cast error".to_string());
+        let error = SchemaCastError::CastError("cast error".to_owned());
         assert!(error.to_string().contains("cast error"));
     }
 
@@ -791,11 +786,11 @@ mod tests {
     #[test]
     fn test_json_entity_cast_result_serialization() {
         let result = GtsEntityCastResult {
-            from_id: "gts.vendor.package.namespace.type.v1.0".to_string(),
-            to_id: "gts.vendor.package.namespace.type.v2.0".to_string(),
-            old: "gts.vendor.package.namespace.type.v1.0".to_string(),
-            new: "gts.vendor.package.namespace.type.v2.0".to_string(),
-            direction: "up".to_string(),
+            from_id: "gts.vendor.package.namespace.type.v1.0".to_owned(),
+            to_id: "gts.vendor.package.namespace.type.v2.0".to_owned(),
+            old: "gts.vendor.package.namespace.type.v1.0".to_owned(),
+            new: "gts.vendor.package.namespace.type.v2.0".to_owned(),
+            direction: "up".to_owned(),
             added_properties: vec![],
             removed_properties: vec![],
             changed_properties: vec![],

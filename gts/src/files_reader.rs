@@ -17,7 +17,7 @@ pub struct GtsFileReader {
 }
 
 impl GtsFileReader {
-    #[must_use] 
+    #[must_use]
     pub fn new(path: &[String], cfg: Option<GtsConfig>) -> Self {
         let paths = path
             .iter()

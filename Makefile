@@ -1,6 +1,24 @@
 CI := 1
 
-.PHONY: check fmt clippy test deny security
+.PHONY: help build dev-fmt all check fmt clippy test deny security
+
+# Default target - show help
+.DEFAULT_GOAL := help
+
+# Show this help message
+help:
+	@awk '/^# / { desc=substr($$0, 3) } /^[a-zA-Z0-9_-]+:/ && desc { target=$$1; sub(/:$$/, "", target); printf "%-20s - %s\n", target, desc; desc="" }' Makefile | sort
+
+# Build the workspace
+build:
+	cargo build --workspace
+
+# Fix formatting issues
+dev-fmt:
+	cargo fmt --all
+
+# Run all checks and build
+all: check build
 
 # Check code formatting
 fmt:
@@ -24,7 +42,3 @@ security: deny
 
 # Run all quality checks
 check: fmt clippy test
-
-# Show this help message
-help:
-	@awk '/^# / { desc=substr($$0, 3) } /^[a-zA-Z0-9_-]+:/ && desc { printf "%-20s - %s\n", $$1, desc; desc="" }' Makefile | sort
