@@ -148,14 +148,12 @@ impl GtsFileReader {
                             None,
                             None,
                         );
-                        if let Some(ref gts_id) = entity.gts_id {
-                            tracing::debug!("- discovered entity: {}", gts_id.id);
+                        // Use effective_id() which handles both GTS IDs and anonymous instance IDs
+                        if let Some(id) = entity.effective_id() {
+                            tracing::debug!("- discovered entity: {}", id);
                             entities.push(entity);
                         } else {
-                            tracing::debug!(
-                                "- skipped entity from {:?} (no valid GTS ID)",
-                                file_path
-                            );
+                            tracing::debug!("- skipped entity from {:?} (no valid ID)", file_path);
                         }
                     }
                 } else {
@@ -170,12 +168,13 @@ impl GtsFileReader {
                         None,
                         None,
                     );
-                    if let Some(ref gts_id) = entity.gts_id {
-                        tracing::debug!("- discovered entity: {}", gts_id.id);
+                    // Use effective_id() which handles both GTS IDs and anonymous instance IDs
+                    if let Some(id) = entity.effective_id() {
+                        tracing::debug!("- discovered entity: {}", id);
                         entities.push(entity);
                     } else {
                         tracing::debug!(
-                            "- skipped entity from {:?} (no valid GTS ID found in content: {:?})",
+                            "- skipped entity from {:?} (no valid ID found in content: {:?})",
                             file_path,
                             content
                         );
