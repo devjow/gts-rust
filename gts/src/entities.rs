@@ -544,8 +544,13 @@ impl GtsEntity {
                         } else {
                             format!("{path}.$ref")
                         };
+                        // Normalize: strip gts:// prefix for canonical GTS ID storage
+                        let normalized_ref = ref_str
+                            .strip_prefix(GTS_URI_PREFIX)
+                            .unwrap_or(ref_str)
+                            .to_owned();
                         return Some(GtsRef {
-                            id: ref_str.to_owned(),
+                            id: normalized_ref,
                             source_path: ref_path,
                         });
                     }
@@ -734,10 +739,10 @@ mod tests {
     fn test_json_entity_extract_ref_strings() {
         let content = json!({
             "$schema": "http://json-schema.org/draft-07/schema#",
-            "$ref": "gts.vendor.package.namespace.type.v1.0~",
+            "$ref": "gts://gts.vendor.package.namespace.type.v1.0~",
             "properties": {
                 "user": {
-                    "$ref": "gts.other.package.namespace.type.v2.0~"
+                    "$ref": "gts://gts.other.package.namespace.type.v2.0~"
                 }
             }
         });

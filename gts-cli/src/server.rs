@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
@@ -195,7 +196,11 @@ async fn add_entity(
 ) -> impl IntoResponse {
     let mut ops = state.ops.lock().unwrap();
     let result = ops.add_entity(&body, params.validate);
-    Json(result)
+    if result.ok {
+        (StatusCode::OK, Json(result))
+    } else {
+        (StatusCode::UNPROCESSABLE_ENTITY, Json(result))
+    }
 }
 
 async fn add_entities(
