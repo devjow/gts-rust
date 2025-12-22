@@ -135,7 +135,7 @@ Extract GTS identifiers from JSON objects. This happens automatically when loadi
 
 ```bash
 # List all entities (extracts IDs from all JSON/YAML files)
-gts --path ./examples list --limit 10
+gts --path ./.gts-spec/examples list --limit 10
 ```
 
 #### OP#3 - ID Parsing
@@ -226,7 +226,7 @@ Validate object instances against their corresponding schemas.
 
 ```bash
 # Validate a single instance
-gts --path ./examples validate-instance --gts-id "gts.x.core.events.event.v1.0"
+gts --path ./.gts-spec/examples validate-instance --gts-id "gts.x.core.events.event.v1.0"
 
 # The system:
 # 1. Loads the instance by ID
@@ -248,7 +248,7 @@ Load all schemas and instances, resolve inter-dependencies, and detect broken re
 
 ```bash
 # Resolve relationships for an entity
-gts --path ./examples resolve-relationships --gts-id "gts.x.core.events.event.v1.0"
+gts --path ./.gts-spec/examples resolve-relationships --gts-id "gts.x.core.events.event.v1.0"
 
 # The system:
 # 1. Loads the entity
@@ -276,9 +276,10 @@ gts --path ./examples resolve-relationships --gts-id "gts.x.core.events.event.v1
 Verify that schemas with different MINOR versions are compatible.
 
 ```bash
-# Check backward compatibility (v1 -> v2)
-gts --path ./examples compatibility --old-schema-id "gts.x.core.events.event.v1.1~" \
-                  --new-schema-id "gts.x.core.events.event.v1.2~"
+# Check compatibility between schema versions
+gts --path ./.gts-spec/examples compatibility \
+    --old-schema-id "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~" \
+    --new-schema-id "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
 
 # The system checks:
 # - OP#8.1: Backward compatibility (old instances work with new schema)
@@ -289,15 +290,20 @@ gts --path ./examples compatibility --old-schema-id "gts.x.core.events.event.v1.
 **Output:**
 ```json
 {
-  "old_schema_id": "gts.x.core.events.event.v1.1~",
-  "new_schema_id": "gts.x.core.events.event.v1.2~",
+  "from": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~",
+  "to": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~",
+  "old": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~",
+  "new": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~",
+  "direction": "up",
+  "added_properties": [],
+  "removed_properties": [],
+  "changed_properties": [],
+  "is_fully_compatible": true,
   "is_backward_compatible": true,
-  "is_forward_compatible": false,
-  "is_fully_compatible": false,
+  "is_forward_compatible": true,
+  "incompatibility_reasons": [],
   "backward_errors": [],
-  "forward_errors": [
-    "Added required properties: email"
-  ]
+  "forward_errors": []
 }
 ```
 
@@ -306,9 +312,10 @@ gts --path ./examples compatibility --old-schema-id "gts.x.core.events.event.v1.
 Transform instances between compatible MINOR versions.
 
 ```bash
-# Cast instance from v1.0 to v2 schema
-gts --path ./examples cast --from-id "gts.x.core.events.event.v1.1~" \
-         --to-schema-id "gts.x.core.events.event.v1.2~"
+# Cast instance from v1.0 to v1.1 schema (instance is identified by UUID)
+gts --path ./.gts-spec/examples cast \
+    --from-id "7a1d2f34-5678-49ab-9012-abcdef123456" \
+    --to-schema-id "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
 
 # The system:
 # 1. Loads source instance and both schemas
@@ -320,17 +327,24 @@ gts --path ./examples cast --from-id "gts.x.core.events.event.v1.1~" \
 **Output:**
 ```json
 {
-  "from": "gts.x.core.events.event.v1.0",
-  "to": "gts.x.core.events.event.v1.2~",
-  "direction": "up",
-  "is_backward_compatible": true,
-  "is_forward_compatible": false,
-  "added_properties": ["region"],
+  "from": "",
+  "to": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~",
+  "direction": "unknown",
+  "added_properties": ["payload.new_field_in_v1_1"],
   "removed_properties": [],
+  "is_fully_compatible": true,
+  "is_backward_compatible": true,
+  "is_forward_compatible": true,
   "casted_entity": {
-    "gtsId": "gts.x.core.events.event.v1.0",
-    "name": "example",
-    "region": "us-east"
+    "id": "7a1d2f34-5678-49ab-9012-abcdef123456",
+    "type": "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~",
+    "payload": {
+      "orderId": "af0e3c1b-8f1e-4a27-9a9b-b7b9b70c1f01",
+      "customerId": "0f2e4a9b-1c3d-4e5f-8a9b-0c1d2e3f4a5b",
+      "totalAmount": 149.99,
+      "items": [...],
+      "new_field_in_v1_1": "some_value"
+    }
   }
 }
 ```
@@ -341,16 +355,16 @@ Filter identifier collections using the GTS query language.
 
 ```bash
 # Query with wildcard pattern
-gts --path ./examples query --expr "gts.x.core.events.*" --limit 50
+gts --path ./.gts-spec/examples query --expr "gts.x.core.events.*" --limit 50
 
 # Query with attribute filter
-gts --path ./examples query --expr "gts.x.core.events.*[status=active]" --limit 50
+gts --path ./.gts-spec/examples query --expr "gts.x.core.events.*[status=active]" --limit 50
 
 # Query schemas only (ending with ~)
-gts --path ./examples query --expr "gts.x.*.*.*.v1~" --limit 100
+gts --path ./.gts-spec/examples query --expr "gts.x.*.*.*.v1~" --limit 100
 
 # Query specific namespace
-gts --path ./examples query --expr "gts.vendor.package.namespace.*" --limit 20
+gts --path ./.gts-spec/examples query --expr "gts.vendor.package.namespace.*" --limit 20
 ```
 
 **Output:**
@@ -360,9 +374,8 @@ gts --path ./examples query --expr "gts.vendor.package.namespace.*" --limit 20
   "count": 3,
   "limit": 50,
   "results": [
-    {"gtsId": "gts.x.core.events.event.v1~", ...},
-    {"gtsId": "gts.x.core.events.event.v1.0", ...},
-    {"gtsId": "gts.x.core.events.topic.v1~", ...}
+    {"id": "gts.x.core.events.event.v1~...", ...},
+    {"id": "gts.x.core.events.topic.v1~...", ...}
   ]
 }
 ```
@@ -373,16 +386,16 @@ Retrieve property values and metadata using the attribute selector (`@`).
 
 ```bash
 # Access top-level property
-gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@name"
+gts --path ./.gts-spec/examples attr --gts-with-path "gts.x.core.events.event.v1.0@name"
 
 # Access nested property
-gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp"
+gts --path ./.gts-spec/examples attr --gts-with-path "gts.x.core.events.event.v1.0@metadata.timestamp"
 
 # Access array element
-gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1.0@tags[0]"
+gts --path ./.gts-spec/examples attr --gts-with-path "gts.x.core.events.event.v1.0@tags[0]"
 
 # Access schema property
-gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1~@properties.name.type"
+gts --path ./.gts-spec/examples attr --gts-with-path "gts.x.core.events.event.v1~@properties.name.type"
 ```
 
 **Output:**
@@ -399,20 +412,20 @@ gts --path ./examples attr --gts-with-path "gts.x.core.events.event.v1~@properti
 
 **List Entities:**
 ```bash
-gts --path ./examples list --limit 100
+gts --path ./.gts-spec/examples list --limit 100
 ```
 
 **Start HTTP Server:**
 ```bash
 # Start server without HTTP logging (WARNING level only)
-gts --path ./examples server --host 127.0.0.1 --port 8000
+gts --path ./.gts-spec/examples server --host 127.0.0.1 --port 8000
 # CURL: curl http://127.0.0.1:8000/entities | jq .
 
 # Start server with HTTP request logging (-v or --verbose)
-gts -v --path ./examples server --host 127.0.0.1 --port 8000
+gts -v --path ./.gts-spec/examples server --host 127.0.0.1 --port 8000
 
 # Start server with detailed logging including request/response bodies (-vv)
-gts -vv --path ./examples server --host 127.0.0.1 --port 8000
+gts -vv --path ./.gts-spec/examples server --host 127.0.0.1 --port 8000
 ```
 
 Verbose logging format:
@@ -599,8 +612,8 @@ for ref_id in result.refs {
 ```rust
 // Check schema compatibility
 let result = ops.compatibility(
-    "gts.x.core.events.event.v1~",
-    "gts.x.core.events.event.v2~"
+    "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~",
+    "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
 );
 
 // OP#8.1 - Backward compatibility
@@ -632,13 +645,11 @@ if result.is_fully_compatible {
 #### OP#9 - Version Casting
 
 ```rust
-// Cast instance to new schema version
+// Cast instance to new schema version (instance identified by UUID)
 let result = ops.cast(
-    "gts.x.core.events.event.v1.0",
-    "gts.x.core.events.event.v2~"
+    "7a1d2f34-5678-49ab-9012-abcdef123456",
+    "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
 );
-
-assert!(result.ok);
 
 // Check what changed
 println!("Direction: {}", result.direction);
@@ -739,15 +750,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // OP#8: Check compatibility
     let compat = ops.compatibility(
-        "gts.x.core.events.event.v1~",
-        "gts.x.core.events.event.v2~"
+        "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~",
+        "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
     );
     println!("Backward compatible: {}", compat.is_backward_compatible);
 
-    // OP#9: Cast instance
+    // OP#9: Cast instance (instance identified by UUID)
     let cast = ops.cast(
-        "gts.x.core.events.event.v1.0",
-        "gts.x.core.events.event.v2~"
+        "7a1d2f34-5678-49ab-9012-abcdef123456",
+        "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.1~"
     );
     if let Some(casted) = cast.casted_entity {
         println!("Casted: {}", serde_json::to_string_pretty(&casted)?);
@@ -770,7 +781,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Start the server:
 
 ```bash
-gts --path ./examples server --host 127.0.0.1 --port 8000
+gts --path ./.gts-spec/examples server --host 127.0.0.1 --port 8000
 # curl http://localhost:8000/entities | jq .
 ```
 
