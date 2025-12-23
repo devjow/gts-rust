@@ -151,9 +151,9 @@ jobs:
           submodules: recursive
 
       - name: Install Rust toolchain (with llvm-tools)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly
+          toolchain: stable
           components: llvm-tools-preview
 
       - name: Cache Cargo/target
@@ -196,7 +196,7 @@ jobs:
       # Generate lcov.info for upload.
       - name: Coverage (lcov)
         env:
-          RUSTFLAGS: "-C debuginfo=0 --cfg coverage_nightly"
+          RUSTFLAGS: "-C debuginfo=0"
           CARGO_LLVM_COV_TARGET_DIR: llvm-cov-target
           CARGO_LLVM_COV_BUILD_DIR: llvm-cov-build
         run: |
