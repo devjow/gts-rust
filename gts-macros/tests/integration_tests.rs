@@ -431,9 +431,9 @@ fn test_invalid_instance_wrong_type() {
 }
 
 #[test]
-fn test_instance_with_extra_fields_validates() {
-    // JSON Schema by default allows additional properties
-    // This test verifies instances can have extra fields not in schema
+fn test_instance_with_extra_fields_rejected() {
+    // GTS schemas have additionalProperties: false at root level
+    // This test verifies instances with extra fields are rejected
     let instance_with_extras = serde_json::json!({
         "id": "topic-123",
         "name": "test-topic",
@@ -448,8 +448,8 @@ fn test_instance_with_extra_fields_validates() {
     let compiled = JSONSchema::compile(&schema).unwrap();
 
     assert!(
-        compiled.is_valid(&instance_with_extras),
-        "Instance with extra fields should validate (additionalProperties defaults to true)"
+        !compiled.is_valid(&instance_with_extras),
+        "Instance with extra fields should be rejected (additionalProperties is false)"
     );
 }
 

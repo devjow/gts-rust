@@ -1,12 +1,18 @@
+use std::fmt::Write;
+use std::path::{Path, PathBuf};
+
+use clap::Parser;
 use gts::gts_schema_for;
-use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
+
+const SEPARATOR: &str =
+    "================================================================================";
 
 // Include test structs to access their generated constants
 mod test_structs {
-    use super::{Deserialize, JsonSchema, Serialize};
-
-    pub use gts_macros::struct_to_gts_schema;
+    use super::{Deserialize, Serialize};
+    use gts_macros::struct_to_gts_schema;
+    use schemars::JsonSchema;
 
     #[struct_to_gts_schema(
         dir_path = "schemas",
@@ -63,24 +69,181 @@ mod test_structs {
     }
 }
 
+/// GTS Macros CLI - Demo tool for GTS schema introspection and inheritance
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Directory to dump all schemas and instances to.
+    /// Schemas are saved as `{schema_id}.schema.json` (without `gts://` prefix).
+    /// Instances are saved as `{instance_id}.json`.
+    #[arg(long, value_name = "DIR")]
+    dump: Option<PathBuf>,
+}
+
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    if let Some(dir) = args.dump {
+        dump_to_directory(&dir)?;
+    } else {
+        run_demo()?;
+    }
+
+    Ok(())
+}
+
+/// Helper function to save a schema to a file
+fn save_schema(
+    dir: &std::path::Path,
+    schema: &serde_json::Value,
+    schema_id: &str,
+) -> anyhow::Result<()> {
+    let schema_path = dir.join(format!("{schema_id}.schema.json"));
+    std::fs::write(&schema_path, serde_json::to_string_pretty(schema)? + "\n")?;
+    println!("Saved schema: {}", schema_path.display());
+    Ok(())
+}
+
+/// Helper function to create a sample event with fixed UUIDs
+fn create_sample_event() -> anyhow::Result<
+    test_structs::BaseEventV1<
+        test_structs::AuditPayloadV1<
+            test_structs::PlaceOrderDataV1<test_structs::PlaceOrderDataPayloadV1>,
+        >,
+    >,
+> {
+    Ok(test_structs::BaseEventV1 {
+        event_type: "gts.x.core.events.type.order.placed.v1~".to_owned(),
+        id: uuid::Uuid::parse_str("d1b475cf-8155-45c3-ab75-b245bd38116b")?,
+        tenant_id: uuid::Uuid::parse_str("0a0bd7c0-e8ef-4d7d-b841-645715e25d20")?,
+        sequence_id: 42,
+        payload: test_structs::AuditPayloadV1 {
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)".to_owned(),
+            user_id: uuid::Uuid::parse_str("5d4e4360-aa4d-4614-9aec-7779ef9177c1")?,
+            ip_address: "192.168.1.100".to_owned(),
+            data: test_structs::PlaceOrderDataV1 {
+                order_id: uuid::Uuid::parse_str("d2e9495b-834f-4f46-a404-cd70801beeee")?,
+                product_id: uuid::Uuid::parse_str("13121f11-f30e-49fc-a4c4-a45267ce96e1")?,
+                last: test_structs::PlaceOrderDataPayloadV1 {
+                    order_id: uuid::Uuid::parse_str("dcc12039-0119-4417-b3ed-90a4e91f9557")?,
+                },
+            },
+        },
+    })
+}
+
+/// Dump all schemas and instances to the specified directory
+fn dump_to_directory(dir: &Path) -> anyhow::Result<()> {
+    use gts::GtsSchema;
+
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(dir)?;
+
+    // Create a sample instance with fixed UUIDs for reproducibility
+    let event = create_sample_event()?;
+
+    // Save instance with its ID as filename
+    let instance_id = event.id.to_string();
+    let instance_path = dir.join(format!("{instance_id}.json"));
+    let instance_json = serde_json::to_string_pretty(&event)? + "\n";
+    std::fs::write(&instance_path, instance_json)?;
+    println!("Saved instance: {}", instance_path.display());
+
+    // Save schemas using gts_schema_for! macro
+    // Schema 1: BaseEventV1 (base type)
+    let schema1 = gts_schema_for!(test_structs::BaseEventV1<()>);
+    save_schema(dir, &schema1, test_structs::BaseEventV1::<()>::SCHEMA_ID)?;
+
+    // Schema 2: BaseEventV1<AuditPayloadV1>
+    let schema2 = gts_schema_for!(test_structs::BaseEventV1<test_structs::AuditPayloadV1<()>>);
+    save_schema(dir, &schema2, test_structs::AuditPayloadV1::<()>::SCHEMA_ID)?;
+
+    // Schema 3: BaseEventV1<AuditPayloadV1<PlaceOrderDataV1>>
+    let schema3 = gts_schema_for!(
+        test_structs::BaseEventV1<test_structs::AuditPayloadV1<test_structs::PlaceOrderDataV1<()>>>
+    );
+    save_schema(
+        dir,
+        &schema3,
+        test_structs::PlaceOrderDataV1::<()>::SCHEMA_ID,
+    )?;
+
+    // Schema 4: BaseEventV1<AuditPayloadV1<PlaceOrderDataV1<PlaceOrderDataPayloadV1>>>
+    let schema4 = gts_schema_for!(
+        test_structs::BaseEventV1<
+            test_structs::AuditPayloadV1<
+                test_structs::PlaceOrderDataV1<test_structs::PlaceOrderDataPayloadV1>,
+            >,
+        >
+    );
+    save_schema(
+        dir,
+        &schema4,
+        test_structs::PlaceOrderDataPayloadV1::SCHEMA_ID,
+    )?;
+
+    // Generate validate.sh script
+    // The main schema is the innermost (most derived) schema
+    // Referenced schemas are listed from most derived to base (excluding the main schema)
+    let schema1_id = test_structs::BaseEventV1::<()>::SCHEMA_ID;
+    let schema2_id = test_structs::AuditPayloadV1::<()>::SCHEMA_ID;
+    let schema3_id = test_structs::PlaceOrderDataV1::<()>::SCHEMA_ID;
+    let schema4_id = test_structs::PlaceOrderDataPayloadV1::SCHEMA_ID;
+    let schema_ids = [schema4_id, schema3_id, schema2_id, schema1_id];
+
+    let mut validate_script = String::from("#!/bin/bash\n\n");
+    // Get the directory where this script is located, so it works from any location
+    validate_script.push_str("SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n\n");
+    validate_script.push_str("npx ajv-cli validate \\\n");
+    validate_script.push_str("  --spec=draft7 \\\n");
+    validate_script.push_str("  -c ajv-formats \\\n");
+    validate_script.push_str("  --strict=false \\\n");
+
+    // Main schema (-s): the innermost/most derived schema
+    let main_schema_id = schema_ids[0];
+    writeln!(
+        validate_script,
+        "  -s \"$SCRIPT_DIR/{main_schema_id}.schema.json\" \\"
+    )?;
+
+    // Referenced schemas (-r): from most derived to base, excluding the main schema
+    for schema_id in &schema_ids[1..] {
+        writeln!(
+            validate_script,
+            "  -r \"$SCRIPT_DIR/{schema_id}.schema.json\" \\"
+        )?;
+    }
+
+    // Data file (-d): the instance
+    writeln!(validate_script, "  -d \"$SCRIPT_DIR/{instance_id}.json\"")?;
+
+    let validate_path = dir.join("validate.sh");
+    std::fs::write(&validate_path, validate_script)?;
+
+    // Make the script executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&validate_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&validate_path, perms)?;
+    }
+
+    println!("Saved validate script: {}", validate_path.display());
+
+    println!("\nDone! All files saved to: {}", dir.display());
+
+    Ok(())
+}
+
+/// Run the original demo output
+fn run_demo() -> anyhow::Result<()> {
+    println!("{SEPARATOR}");
     println!("GTS Macros Demo - Schema Inheritance Chain");
-    println!("============================================\n");
+    println!("{SEPARATOR}\n");
 
     // Print instance examples
     print_instances()?;
-
-    println!("\n{}\n", "=".repeat(80));
-
-    // Print schemas WITH_REFS
-    print_schemas_refs()?;
-
-    println!("\n{}\n", "=".repeat(80));
-
-    // Print schemas INLINE (resolved)
-    // print_schemas_inline()?;
-
-    println!("\n{}\n", "=".repeat(80));
 
     // Print gts_schema_for! macro output
     print_gts_schema_for()?;
@@ -90,27 +253,10 @@ fn main() -> anyhow::Result<()> {
 
 fn print_instances() -> anyhow::Result<()> {
     println!("INSTANCE EXAMPLES");
-    println!("====================\n");
+    println!("-----------------\n");
 
     // Create a complete inheritance chain instance
-    let event = test_structs::BaseEventV1 {
-        event_type: "order.placed".to_owned(),
-        id: uuid::Uuid::new_v4(),
-        tenant_id: uuid::Uuid::new_v4(),
-        sequence_id: 42,
-        payload: test_structs::AuditPayloadV1 {
-            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)".to_owned(),
-            user_id: uuid::Uuid::new_v4(),
-            ip_address: "192.168.1.100".to_owned(),
-            data: test_structs::PlaceOrderDataV1 {
-                order_id: uuid::Uuid::new_v4(),
-                product_id: uuid::Uuid::new_v4(),
-                last: test_structs::PlaceOrderDataPayloadV1 {
-                    order_id: uuid::Uuid::new_v4(),
-                },
-            },
-        },
-    };
+    let event = create_sample_event()?;
 
     println!("Complete Inheritance Chain Instance:");
     println!("```json");
@@ -125,145 +271,9 @@ fn print_instances() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_schemas_refs() -> anyhow::Result<()> {
-    println!("REQUIRED OUTPUT (using gts:// external $ref)");
-    println!("===============================================\n");
-
-    println!("Each schema generated from struct, with gts:// $id and parent $ref.\n");
-
-    // BaseEventV1 - no parent, generate from struct
-    println!("1. BaseEventV1 Schema (no parent - base type):");
-    println!("```json");
-    let mut base_schema = serde_json::to_value(schema_for!(test_structs::BaseEventV1<()>))?;
-    // Add gts:// $id
-    base_schema["$id"] = serde_json::json!(format!(
-        "gts://{}",
-        test_structs::BaseEventV1::<()>::GTS_SCHEMA_ID
-    ));
-    base_schema["description"] =
-        serde_json::json!(test_structs::BaseEventV1::<()>::GTS_SCHEMA_DESCRIPTION);
-    // Fix payload type: change from "null" to "object" with additionalProperties: false for generic base types
-    if let Some(properties) = base_schema
-        .get_mut("properties")
-        .and_then(|p| p.as_object_mut())
-    {
-        if let Some(payload) = properties.get_mut("payload") {
-            if payload.get("type").and_then(|t| t.as_str()) == Some("null") {
-                *payload = serde_json::json!({
-                    "type": "object",
-                    "additionalProperties": false
-                });
-            }
-        }
-    }
-    println!("{}", serde_json::to_string_pretty(&base_schema)?);
-    println!("```\n");
-
-    // AuditPayloadV1 - generate from struct, add parent $ref
-    println!("2. AuditPayloadV1 Schema (references parent via gts://):");
-    println!("```json");
-    let mut audit_schema = serde_json::to_value(schema_for!(test_structs::AuditPayloadV1<()>))?;
-    // Add gts:// $id
-    audit_schema["$id"] = serde_json::json!(format!(
-        "gts://{}",
-        test_structs::AuditPayloadV1::<()>::GTS_SCHEMA_ID
-    ));
-    audit_schema["description"] =
-        serde_json::json!(test_structs::AuditPayloadV1::<()>::GTS_SCHEMA_DESCRIPTION);
-    // Add allOf with parent $ref
-    let mut own_properties = audit_schema["properties"].take();
-    let own_required = audit_schema["required"].take();
-    // Fix data type: change from "null" to "object" with additionalProperties: false for generic base types
-    if let Some(props) = own_properties.as_object_mut() {
-        if let Some(data) = props.get_mut("data") {
-            if data.get("type").and_then(|t| t.as_str()) == Some("null") {
-                *data = serde_json::json!({
-                    "type": "object",
-                    "additionalProperties": false
-                });
-            }
-        }
-    }
-    audit_schema["allOf"] = serde_json::json!([
-        { "$ref": format!("gts://{}", test_structs::BaseEventV1::<()>::GTS_SCHEMA_ID) },
-        { "type": "object", "properties": { "payload": { "type": "object", "properties": own_properties, "required": own_required } } }
-    ]);
-    if let Some(obj) = audit_schema.as_object_mut() {
-        obj.remove("properties");
-        obj.remove("required");
-    }
-    println!("{}", serde_json::to_string_pretty(&audit_schema)?);
-    println!("```\n");
-
-    // PlaceOrderDataV1 - generate from struct, add parent $ref
-    println!("3. PlaceOrderDataV1 Schema (references parent via gts://):");
-    println!("```json");
-    let mut place_order_schema =
-        serde_json::to_value(schema_for!(test_structs::PlaceOrderDataV1<()>))?;
-    // Add gts:// $id
-    place_order_schema["$id"] = serde_json::json!(format!(
-        "gts://{}",
-        test_structs::PlaceOrderDataV1::<()>::GTS_SCHEMA_ID
-    ));
-    place_order_schema["description"] =
-        serde_json::json!(test_structs::PlaceOrderDataV1::<()>::GTS_SCHEMA_DESCRIPTION);
-    // Add allOf with parent $ref
-    let own_properties = place_order_schema["properties"].take();
-    let own_required = place_order_schema["required"].take();
-    place_order_schema["allOf"] = serde_json::json!([
-        { "$ref": format!("gts://{}", test_structs::AuditPayloadV1::<()>::GTS_SCHEMA_ID) },
-        { "type": "object", "properties": { "payload": { "type": "object", "properties": { "data": { "type": "object", "properties": own_properties, "required": own_required } } } } }
-    ]);
-    if let Some(obj) = place_order_schema.as_object_mut() {
-        obj.remove("properties");
-        obj.remove("required");
-    }
-    println!("{}", serde_json::to_string_pretty(&place_order_schema)?);
-    println!("```\n");
-
-    Ok(())
-}
-
-#[allow(dead_code)]
-fn print_schemas_inline() -> anyhow::Result<()> {
-    println!("INLINE VERSION (using schemars with internal $ref)");
-    println!("===================================================\n");
-
-    println!("Fully resolved nested schema with definitions section.\n");
-
-    // Generate schema for each type using schemars
-    println!("1. BaseEventV1 (standalone):");
-    println!("```json");
-    let base_schema = schema_for!(test_structs::BaseEventV1<()>);
-    println!("{}", serde_json::to_string_pretty(&base_schema)?);
-    println!("```\n");
-
-    println!("2. AuditPayloadV1 (standalone):");
-    println!("```json");
-    let audit_schema = schema_for!(test_structs::AuditPayloadV1<()>);
-    println!("{}", serde_json::to_string_pretty(&audit_schema)?);
-    println!("```\n");
-
-    println!("3. PlaceOrderDataV1 (standalone):");
-    println!("```json");
-    let place_order_schema = schema_for!(test_structs::PlaceOrderDataV1<()>);
-    println!("{}", serde_json::to_string_pretty(&place_order_schema)?);
-    println!("```\n");
-
-    println!("4. Full Composed Type (BaseEventV1<AuditPayloadV1<PlaceOrderDataV1<()>>>):");
-    println!("```json");
-    let composed_schema = schema_for!(
-        test_structs::BaseEventV1<test_structs::AuditPayloadV1<test_structs::PlaceOrderDataV1<()>>>
-    );
-    println!("{}", serde_json::to_string_pretty(&composed_schema)?);
-    println!("```\n");
-
-    Ok(())
-}
-
 fn print_gts_schema_for() -> anyhow::Result<()> {
-    println!("GTS_SCHEMA_FOR! MACRO (allOf with $ref to base)");
-    println!("=================================================\n");
+    println!("GTS schemas and instances examples");
+    println!("----------------------------------\n");
 
     println!("gts_schema_for!(BaseEventV1):");
     println!("```json");

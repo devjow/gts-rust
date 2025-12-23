@@ -343,25 +343,27 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 let mut properties = innermost.get("properties").cloned().unwrap_or(serde_json::json!({}));
                 let required = innermost.get("required").cloned().unwrap_or(serde_json::json!([]));
 
-                // Fix null types for generic fields - change "null" to "object" with additionalProperties: false
-                // This ensures only nested inherited structs can be used (no arbitrary extra properties)
+                // Fix null types for generic fields - change "null" to just "object" (no additionalProperties)
+                // The generic field is a placeholder that will be extended by child schemas
                 if let Some(props) = properties.as_object_mut() {
                     for (_, prop_val) in props.iter_mut() {
                         if prop_val.get("type").and_then(|t| t.as_str()) == Some("null") {
                             *prop_val = serde_json::json!({
-                                "type": "object",
-                                "additionalProperties": false
+                                "type": "object"
                             });
                         }
                     }
                 }
 
                 // If no parent (base type), return simple schema without allOf
+                // Base types have additionalProperties: false at root level
+                // Generic fields are just {"type": "object"} (will be extended by children)
                 if parent_schema_id.is_empty() {
                     let mut schema = serde_json::json!({
                         "$id": format!("gts://{}", schema_id),
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
+                        "additionalProperties": false,
                         "properties": properties
                     });
                     if !required.as_array().map(|a| a.is_empty()).unwrap_or(true) {
@@ -377,8 +379,12 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 //   - path ["a", "b"] wraps Inner's properties
                 let nesting_path = Self::collect_nesting_path();
 
+                // Get the generic field name for the innermost type (if it has one)
+                // This field should NOT have additionalProperties: false since it will be extended
+                let innermost_generic_field = <#generic_ident as ::gts::GtsSchema>::GENERIC_FIELD;
+
                 // Wrap properties in the nesting path
-                let nested_properties = Self::wrap_in_nesting_path(&nesting_path, properties, required.clone());
+                let nested_properties = Self::wrap_in_nesting_path(&nesting_path, properties, required.clone(), innermost_generic_field);
 
                 // Child type - use allOf with $ref to parent
                 serde_json::json!({
@@ -430,11 +436,13 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 let required = schema_val.get("required").cloned().unwrap_or_else(|| serde_json::json!([]));
 
                 // If no parent (base type), return simple schema without allOf
+                // Non-generic base types have additionalProperties: false at root level
                 if parent_schema_id.is_empty() {
                     let mut schema = serde_json::json!({
                         "$id": format!("gts://{}", schema_id),
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
+                        "additionalProperties": false,
                         "properties": properties
                     });
                     if !required.as_array().map(|a| a.is_empty()).unwrap_or(true) {
@@ -444,6 +452,7 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 }
 
                 // Child type - use allOf with $ref to parent
+                // Non-generic child types have additionalProperties: false in their own properties section
                 serde_json::json!({
                     "$id": format!("gts://{}", schema_id),
                     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -452,6 +461,7 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                         { "$ref": format!("gts://{}", parent_schema_id) },
                         {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": properties,
                             "required": required
                         }

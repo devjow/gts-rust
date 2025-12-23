@@ -80,18 +80,30 @@ pub trait GtsSchema {
     }
 
     /// Wrap properties in a nested structure following the nesting path.
-    /// For path `["payload", "data"]` and properties `{order_id, product_id}`,
+    /// For path `["payload", "data"]` and properties `{order_id, product_id, last}`,
     /// returns `{ "payload": { "type": "object", "properties": { "data": { "type": "object", "additionalProperties": false, "properties": {...}, "required": [...] } } } }`
     ///
-    /// Sets `additionalProperties: false` only on the innermost generic field schema (the actual field
-    /// that contains the nested type), not on parent wrapper levels.
+    /// The `additionalProperties: false` is placed on the object that contains the current type's
+    /// own properties. Generic fields that will be extended by children are just `{"type": "object"}`.
+    ///
+    /// # Arguments
+    /// * `path` - The nesting path from outer to inner (e.g., `["payload", "data"]`)
+    /// * `properties` - The properties of the current type
+    /// * `required` - The required fields of the current type
+    /// * `generic_field` - The name of the generic field in the current type (if any), which should NOT have additionalProperties: false
     #[must_use]
-    fn wrap_in_nesting_path(path: &[&str], properties: Value, required: Value) -> Value {
+    fn wrap_in_nesting_path(
+        path: &[&str],
+        properties: Value,
+        required: Value,
+        generic_field: Option<&str>,
+    ) -> Value {
         if path.is_empty() {
             return properties;
         }
 
-        // Build innermost schema with additionalProperties: false (this is the actual generic field)
+        // Build the innermost schema - this contains the current type's own properties
+        // Set additionalProperties: false on this level (the object containing our properties)
         let mut current = serde_json::json!({
             "type": "object",
             "additionalProperties": false,
@@ -99,8 +111,20 @@ pub trait GtsSchema {
             "required": required
         });
 
+        // If we have a generic field, ensure it's just {"type": "object"} without additionalProperties
+        // This field will be extended by child schemas
+        if let Some(gf) = generic_field {
+            if let Some(props) = current
+                .get_mut("properties")
+                .and_then(|v| v.as_object_mut())
+            {
+                if props.contains_key(gf) {
+                    props.insert(gf.to_owned(), serde_json::json!({"type": "object"}));
+                }
+            }
+        }
+
         // Wrap from inner to outer - parent levels don't need additionalProperties: false
-        // Only the innermost level (the actual generic field) has it
         for field in path.iter().rev() {
             current = serde_json::json!({
                 "type": "object",

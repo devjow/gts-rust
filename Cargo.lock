@@ -755,6 +755,7 @@ name = "gts-macros-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "gts",
  "gts-macros",
  "schemars",
