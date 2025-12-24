@@ -298,7 +298,7 @@ impl GtsEntity {
     /// 1. Well-known instances: id field contains a GTS ID (e.g., gts.x.core.events.topic.v1~x.commerce._.orders.v1.0)
     /// 2. Anonymous instances: id field contains a UUID, type field contains the GTS schema ID
     ///
-    /// For schema_id resolution, explicit `type` field takes priority over the chain-derived schema.
+    /// For `schema_id` resolution, explicit `type` field takes priority over the chain-derived schema.
     /// This allows overriding the implicit parent schema from a chained ID.
     fn extract_instance_ids(&mut self, cfg: &GtsConfig) {
         // Only process if content is an object
@@ -332,8 +332,7 @@ impl GtsEntity {
                         if let Some(last_tilde) = gts_id.id.rfind('~') {
                             self.schema_id = Some(gts_id.id[..=last_tilde].to_string());
                             // Mark that schema_id was extracted from the id field
-                            self.selected_schema_id_field =
-                                self.selected_entity_field.clone();
+                            self.selected_schema_id_field = self.selected_entity_field.clone();
                         }
                     }
                 }
