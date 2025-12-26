@@ -79,7 +79,6 @@ impl Default for GtsConfig {
                 "id".to_owned(),
             ],
             schema_id_fields: vec![
-                "$schema".to_owned(),
                 "gtsTid".to_owned(),
                 "gtsType".to_owned(),
                 "gtsT".to_owned(),
@@ -717,9 +716,9 @@ mod tests {
     #[test]
     fn test_json_entity_extract_gts_ids() {
         let content = json!({
-            "id": "gts.vendor.package.namespace.type.v1.0",
+            "id": "gts.vendor.package.namespace.type.v1.0~a.b.c.d.v1",
             "nested": {
-                "ref": "gts.other.package.namespace.type.v2.0"
+                "ref": "gts.other.package.namespace.type.v2.0~e.f.g.h.v2"
             }
         });
 
@@ -904,7 +903,7 @@ mod tests {
     fn test_gts_config_schema_id_fields() {
         let cfg = GtsConfig::default();
         assert!(cfg.schema_id_fields.contains(&"type".to_owned()));
-        assert!(cfg.schema_id_fields.contains(&"$schema".to_owned()));
+        assert!(cfg.schema_id_fields.contains(&"schema".to_owned()));
         assert!(cfg.schema_id_fields.contains(&"gtsTid".to_owned()));
     }
 
@@ -1413,7 +1412,7 @@ mod tests {
         // Well-known instance with single-segment GTS ID (no chain)
         // Should not have schema_id extracted from chain
         let content = json!({
-            "id": "gts.vendor.package.namespace.type.v1.0"
+            "id": "gts.vendor.package.namespace.type.v1.0~a.b.c.d.v1"
         });
 
         let cfg = GtsConfig::default();
@@ -1433,10 +1432,13 @@ mod tests {
         assert!(entity.gts_id.is_some());
         assert_eq!(
             entity.gts_id.as_ref().unwrap().id,
-            "gts.vendor.package.namespace.type.v1.0"
+            "gts.vendor.package.namespace.type.v1.0~a.b.c.d.v1"
         );
-        // Single-segment ID doesn't have a parent schema in the chain
-        assert!(entity.schema_id.is_none());
+        // Chained ID should have schema_id extracted from the chain
+        assert_eq!(
+            entity.schema_id,
+            Some("gts.vendor.package.namespace.type.v1.0~".to_owned())
+        );
     }
 
     #[test]

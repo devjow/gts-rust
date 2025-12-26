@@ -124,6 +124,218 @@ fn count_schema_segments(schema_id: &str) -> usize {
     schema_id.matches('~').count()
 }
 
+/// Check if a type is `GtsInstanceId` (either directly or as a path)
+fn is_type_gts_instance_id(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(type_path) => {
+            // Check for simple GtsInstanceId or gts::GtsInstanceId
+            if let Some(last_segment) = type_path.path.segments.last() {
+                if last_segment.ident == "GtsInstanceId" {
+                    return true;
+                }
+            }
+
+            // Check for full path like gts::GtsInstanceId
+            if type_path.path.segments.len() == 2 {
+                let segments: Vec<String> = type_path
+                    .path
+                    .segments
+                    .iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect();
+                if segments == ["gts", "GtsInstanceId"] {
+                    return true;
+                }
+            }
+
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Check if a type is `GtsSchemaId` (either directly or as a path)
+fn is_type_gts_schema_id(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(type_path) => {
+            if let Some(last_segment) = type_path.path.segments.last() {
+                if last_segment.ident == "GtsSchemaId" {
+                    return true;
+                }
+            }
+            if type_path.path.segments.len() == 2 {
+                let segments: Vec<String> = type_path
+                    .path
+                    .segments
+                    .iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect();
+                if segments == ["gts", "GtsSchemaId"] {
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Extract serde rename value from field attributes
+fn get_serde_rename(field: &syn::Field) -> Option<String> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("serde") {
+            // Parse the serde attribute using a simpler approach
+            if let Ok(meta) = attr.meta.require_list() {
+                let tokens = meta.tokens.to_string();
+
+                // Look for rename = "value" pattern in the token string
+                if let Some(rename_start) = tokens.find("rename") {
+                    let rename_part = &tokens[rename_start..];
+                    if let Some(eq_pos) = rename_part.find('=') {
+                        let value_part = &rename_part[eq_pos + 1..].trim();
+                        // Extract the string value between quotes
+                        if value_part.starts_with('"') && value_part.ends_with('"') {
+                            let rename_value = &value_part[1..value_part.len() - 1];
+                            return Some(rename_value.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Validate base struct field requirements
+fn validate_base_struct_fields(
+    input: &syn::DeriveInput,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    args: &GtsSchemaArgs,
+) -> Result<(), syn::Error> {
+    if !matches!(args.base, BaseAttr::IsBase) {
+        return Ok(());
+    }
+
+    let available_fields: Vec<String> = fields
+        .iter()
+        .filter_map(|f| f.ident.as_ref().map(std::string::ToString::to_string))
+        .collect();
+
+    let id_fields = ["$id", "id", "gts_id", "gtsId"];
+    let type_fields = ["type", "r#type", "gts_type", "gtsType", "schema"];
+
+    // Check for presence of ID and GTS Type fields (including serde renames)
+    let has_id_field = id_fields
+        .iter()
+        .any(|&id_field| available_fields.contains(&id_field.to_owned()));
+
+    let mut has_type_field = type_fields
+        .iter()
+        .any(|&type_field| available_fields.contains(&type_field.to_owned()));
+
+    // Also check for fields with serde rename attributes that map to type field names
+    if !has_type_field {
+        has_type_field = fields.iter().any(|field| {
+            if let Some(serde_rename) = get_serde_rename(field) {
+                serde_rename == "type"
+                    || serde_rename == "gts_type"
+                    || serde_rename == "gtsType"
+                    || serde_rename == "schema"
+            } else {
+                false
+            }
+        });
+    }
+
+    if !has_id_field && !has_type_field {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            format!(
+                "struct_to_gts_schema: Base structs must have either an ID field (one of: {}) OR a GTS Type field (one of: {}), but not both.",
+                id_fields.join(", "),
+                type_fields.join(", ")
+            ),
+        ));
+    }
+
+    // Validate field types
+    validate_field_types(input, fields, has_id_field, has_type_field)
+}
+
+/// Validate that field types are correct for ID and GTS Type fields
+fn validate_field_types(
+    input: &syn::DeriveInput,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    _has_id_field: bool,
+    _has_type_field: bool,
+) -> Result<(), syn::Error> {
+    let has_valid_id_field = fields.iter().any(|field| {
+        if let Some(field_name) = &field.ident {
+            let field_name_str = field_name.to_string();
+            if field_name_str == "$id"
+                || field_name_str == "id"
+                || field_name_str == "gts_id"
+                || field_name_str == "gtsId"
+            {
+                is_type_gts_instance_id(&field.ty)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    });
+
+    let has_valid_type_field = fields.iter().any(|field| {
+        if let Some(field_name) = &field.ident {
+            let field_name_str = field_name.to_string();
+
+            // Check if the field has a serde rename attribute
+            if let Some(serde_rename) = get_serde_rename(field) {
+                // If the field is renamed to a valid GTS Type field name, check its type
+                if serde_rename == "type"
+                    || serde_rename == "gts_type"
+                    || serde_rename == "gtsType"
+                    || serde_rename == "schema"
+                {
+                    return is_type_gts_schema_id(&field.ty);
+                }
+            }
+
+            // Handle both "type" and "r#type" field names, plus "schema"
+            if field_name_str == "type"
+                || field_name_str == "r#type"
+                || field_name_str == "gts_type"
+                || field_name_str == "gtsType"
+                || field_name_str == "schema"
+            {
+                is_type_gts_schema_id(&field.ty)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    });
+
+    // Enforce "either/or but not both" logic
+    if has_valid_id_field && has_valid_type_field {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId, but not both. Found both valid ID and GTS Type fields."
+        ));
+    }
+
+    if !has_valid_id_field && !has_valid_type_field {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId"
+        ));
+    }
+
+    Ok(())
+}
+
 /// Validate that the struct name version suffix matches the `schema_id` version
 fn validate_version_match(struct_ident: &syn::Ident, schema_id: &str) -> syn::Result<()> {
     let struct_name = struct_ident.to_string();
@@ -383,7 +595,11 @@ impl Parse for GtsSchemaArgs {
 /// assert_eq!(instance_id.as_ref(), "gts.x.core.events.topic.v1~vendor.marketplace.orders.order_created.v1");
 /// ```
 #[proc_macro_attribute]
-#[allow(clippy::too_many_lines, clippy::missing_panics_doc)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::missing_panics_doc,
+    clippy::cognitive_complexity
+)]
 pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as GtsSchemaArgs);
     let input = parse_macro_input!(item as DeriveInput);
@@ -462,6 +678,11 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 .to_compile_error()
                 .into();
             }
+        }
+
+        // Validate base struct field requirements
+        if let Err(err) = validate_base_struct_fields(&input, fields, &args) {
+            return err.to_compile_error().into();
         }
     }
 
@@ -592,33 +813,22 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 // We use <ParentStruct<()> as GtsSchema> since all GTS structs must be generic
                 const _: () = {
                     // Use a const assertion to verify at compile time
-                    const PARENT_ID: &str = <#parent_ident<()> as ::gts::GtsSchema>::SCHEMA_ID;
-                    const EXPECTED_ID: &str = #parent_id;
-                    // Compare string lengths first (const-compatible)
-                    assert!(
-                        PARENT_ID.len() == EXPECTED_ID.len(),
-                        #assertion_msg
-                    );
-                    // Compare bytes (const-compatible string comparison)
-                    const fn str_eq(a: &str, b: &str) -> bool {
-                        let a = a.as_bytes();
-                        let b = b.as_bytes();
-                        if a.len() != b.len() {
-                            return false;
+                    const PARENT_ID: &'static str = <#parent_ident<()> as ::gts::GtsSchema>::SCHEMA_ID;
+                    const EXPECTED_ID: &'static str = #parent_id;
+                    // Use a manual string comparison for const context
+                    const _: () = {
+                        // Manual string equality check for const context
+                        if PARENT_ID.as_bytes().len() != EXPECTED_ID.as_bytes().len() {
+                            panic!(#assertion_msg);
                         }
                         let mut i = 0;
-                        while i < a.len() {
-                            if a[i] != b[i] {
-                                return false;
+                        while i < PARENT_ID.as_bytes().len() {
+                            if PARENT_ID.as_bytes()[i] != EXPECTED_ID.as_bytes()[i] {
+                                panic!(#assertion_msg);
                             }
                             i += 1;
                         }
-                        true
-                    }
-                    assert!(
-                        str_eq(PARENT_ID, EXPECTED_ID),
-                        #assertion_msg
-                    );
+                    };
                 };
             }
         }
@@ -858,13 +1068,96 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
         modified_input
             .attrs
             .push(syn::parse_quote!(#[allow(clippy::empty_structs_with_brackets)]));
+
+        // Remove Serialize and Deserialize derives for unit structs since we'll provide custom implementations
+        modified_input.attrs.retain(|attr| {
+            if attr.path().is_ident("derive") {
+                if let Ok(meta) = attr.meta.require_list() {
+                    let tokens = meta.tokens.to_string();
+                    // Check if Serialize or Deserialize is in the derive list
+                    !tokens.contains("Serialize") && !tokens.contains("Deserialize")
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
+        });
+
+        // Add custom derive without Serialize and Deserialize
+        modified_input
+            .attrs
+            .push(syn::parse_quote!(#[derive(Debug, schemars::JsonSchema)]));
     }
+
+    // Generate custom serialization implementation for unit structs to serialize as {} instead of null
+    let custom_serialize_impl = if is_unit_struct {
+        quote! {
+            // Custom Serialize implementation for unit structs to serialize as {} instead of null
+            impl #impl_generics serde::Serialize for #struct_name #ty_generics #where_clause {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    // Serialize unit struct as empty object {}
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(0))?;
+                    map.end()
+                }
+            }
+
+            // Custom Deserialize implementation for unit structs to deserialize from {} instead of null
+            impl<'de, #impl_generics> serde::Deserialize<'de> for #struct_name #ty_generics #where_clause {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    // Deserialize unit struct from empty object {} or null
+                    use serde::de::{Visitor, MapAccess};
+                    use std::fmt;
+
+                    struct UnitStructVisitor #ty_generics;
+
+                    impl<'de, #impl_generics> Visitor<'de> for UnitStructVisitor #ty_generics #where_clause {
+                        type Value = #struct_name #ty_generics;
+
+                        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                            formatter.write_str("unit struct")
+                        }
+
+                        // Handle empty object {}
+                        fn visit_map<M>(self, _map: M) -> Result<Self::Value, M::Error>
+                        where
+                            M: MapAccess<'de>,
+                        {
+                            Ok(#struct_name)
+                        }
+
+                        // Handle null (for backward compatibility)
+                        fn visit_unit<E>(self) -> Result<Self::Value, E>
+                        where
+                            E: serde::de::Error,
+                        {
+                            Ok(#struct_name)
+                        }
+                    }
+
+                    deserializer.deserialize_any(UnitStructVisitor)
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let expanded = quote! {
         #modified_input
 
         // Compile-time assertion for base struct matching (if specified)
         #base_assertion
+
+        // Custom serialization for unit structs to serialize as {} instead of null
+        #custom_serialize_impl
 
         impl #impl_generics #struct_name #ty_generics #gts_schema_where_clause {
             /// File path where the GTS schema will be generated by the CLI.
@@ -875,7 +1168,11 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
             /// GTS schema identifier (the `$id` field in the JSON Schema).
             #[doc(hidden)]
             #[allow(dead_code)]
-            pub const GTS_SCHEMA_ID: &'static str = #schema_id;
+            pub fn gts_schema_id() -> &'static gts::gts::GtsSchemaId {
+                static GTS_SCHEMA_ID: std::sync::LazyLock<gts::gts::GtsSchemaId> =
+                    std::sync::LazyLock::new(|| gts::gts::GtsSchemaId::new(#schema_id));
+                &GTS_SCHEMA_ID
+            }
 
             /// GTS schema description.
             #[doc(hidden)]
@@ -895,7 +1192,6 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
             pub fn make_gts_instance_id(segment: &str) -> ::gts::GtsInstanceId {
                 ::gts::GtsInstanceId::new(#schema_id, segment)
             }
-
         }
 
         // Implement GtsSchema trait for runtime schema composition
@@ -918,6 +1214,14 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
             pub fn gts_json_schema_with_refs() -> String {
                 use ::gts::GtsSchema;
                 serde_json::to_string(&Self::gts_schema_with_refs_allof()).expect("Failed to serialize schema")
+            }
+
+            /// JSON Schema with `allOf` + `$ref` for inheritance (most memory-efficient).
+            /// Returns the schema as a pretty-printed JSON string.
+            #[allow(dead_code)]
+            pub fn gts_json_schema_with_refs_pretty() -> String {
+                use ::gts::GtsSchema;
+                serde_json::to_string_pretty(&Self::gts_schema_with_refs_allof()).expect("Failed to serialize schema")
             }
 
             /// JSON Schema with parent inlined (currently identical to WITH_REFS).

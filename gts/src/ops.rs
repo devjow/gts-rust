@@ -232,6 +232,26 @@ impl GtsOps {
         self.store = GtsStore::new(Some(reader));
     }
 
+    fn get_details(&mut self, entity: &GtsEntity) -> String {
+        let result = "Content: ".to_owned()
+            + &serde_json::to_string_pretty(&entity.content)
+                .unwrap_or_else(|_| "<invalid JSON>".to_owned());
+
+        // Add schema information if available
+        if let Some(schema_id) = &entity.schema_id {
+            match self.store.get(schema_id) {
+                Some(schema_entity) => {
+                    let schema_content = serde_json::to_string_pretty(&schema_entity.content)
+                        .unwrap_or_else(|_| "<invalid schema JSON>".to_owned());
+                    result + "\nSchema: " + &schema_content
+                }
+                None => result + "\nSchema: not found",
+            }
+        } else {
+            result
+        }
+    }
+
     pub fn add_entity(&mut self, content: &Value, validate: bool) -> GtsAddEntityResult {
         let entity = GtsEntity::new(
             None,
@@ -254,9 +274,12 @@ impl GtsOps {
                 schema_id: None,
                 is_schema: false,
                 error: if entity.is_schema {
-                    "Unable to detect GTS ID in schema entity".to_owned()
+                    format!(
+                        "Unable to detect GTS ID in schema entity:\n{}",
+                        self.get_details(&entity)
+                    )
                 } else {
-                    "Unable to detect ID in instance entity. Instances must have an 'id' field (or one of the configured entity_id_fields)".to_owned()
+                    format!("Unable to detect ID in instance entity. Instances must have an 'id' field (or one of the configured entity_id_fields):\n{}", self.get_details(&entity))
                 },
             };
         };
@@ -268,7 +291,10 @@ impl GtsOps {
                 id: String::new(),
                 schema_id: None,
                 is_schema: false,
-                error: e.to_string(),
+                error: format!(
+                    "Unable to register entity: {e}\n{}",
+                    self.get_details(&entity)
+                ),
             };
         }
 
@@ -280,7 +306,10 @@ impl GtsOps {
                     id: String::new(),
                     schema_id: None,
                     is_schema: false,
-                    error: format!("Validation failed: {e}"),
+                    error: format!(
+                        "Schema validation failed: {e}\n{}",
+                        self.get_details(&entity)
+                    ),
                 };
             }
         }
@@ -293,10 +322,15 @@ impl GtsOps {
                     id: String::new(),
                     schema_id: None,
                     is_schema: false,
-                    error: format!("Validation failed: {e}"),
+                    error: format!(
+                        "Instance validation failed: {e}\n{}",
+                        self.get_details(&entity)
+                    ),
                 };
             }
         }
+
+        // println!("submitted: {}", self.get_content_pretty(&entity));
 
         GtsAddEntityResult {
             ok: true,
@@ -324,7 +358,20 @@ impl GtsOps {
             Err(e) => GtsAddSchemaResult {
                 ok: false,
                 id: String::new(),
-                error: e.to_string(),
+                error: format!(
+                    "Unable to register schema: {e}\n{}",
+                    self.get_details(&GtsEntity::new(
+                        None,
+                        None,
+                        schema,
+                        Some(&self.cfg),
+                        None,
+                        false,
+                        String::new(),
+                        None,
+                        None,
+                    ))
+                ),
             },
         }
     }
@@ -340,7 +387,7 @@ impl GtsOps {
             Err(e) => GtsIdValidationResult {
                 id: gts_id.to_owned(),
                 valid: false,
-                error: e.to_string(),
+                error: format!("Unable to validate GTS ID '{gts_id}': {e}"),
             },
         }
     }
@@ -587,9 +634,13 @@ mod tests {
     #[test]
     fn test_validate_id_valid() {
         let ops = GtsOps::new(None, None, 0);
-        let result = ops.validate_id("gts.vendor.package.namespace.type.v1.0");
+        let result =
+            ops.validate_id("gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0");
         assert!(result.valid);
-        assert_eq!(result.id, "gts.vendor.package.namespace.type.v1.0");
+        assert_eq!(
+            result.id,
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0"
+        );
     }
 
     #[test]
@@ -610,9 +661,13 @@ mod tests {
     #[test]
     fn test_parse_id_valid() {
         let ops = GtsOps::new(None, None, 0);
-        let result = ops.parse_id("gts.vendor.package.namespace.type.v1.0");
+        let result =
+            ops.parse_id("gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0");
         assert!(!result.segments.is_empty());
-        assert_eq!(result.id, "gts.vendor.package.namespace.type.v1.0");
+        assert_eq!(
+            result.id,
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0"
+        );
     }
 
     #[test]
@@ -670,8 +725,8 @@ mod tests {
 
     #[test]
     fn test_gts_id_validation() {
-        assert!(GtsID::is_valid("gts.vendor.package.namespace.type.v1.0"));
-        assert!(GtsID::is_valid("gts.vendor.package.namespace.type.v1.0~"));
+        assert!(!GtsID::is_valid("gts.vendor.package.namespace.type.v1.0")); // Single-segment instance - should be invalid
+        assert!(GtsID::is_valid("gts.vendor.package.namespace.type.v1.0~")); // Single-segment type - should be valid
         assert!(!GtsID::is_valid("invalid"));
         assert!(!GtsID::is_valid(""));
     }
@@ -1306,8 +1361,8 @@ mod tests {
         use crate::schema_cast::GtsEntityCastResult;
 
         let direction = GtsEntityCastResult::infer_direction(
-            "gts.vendor.package.namespace.type.v1.0",
-            "gts.vendor.package.namespace.type.v1.1",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
+            "gts.vendor.package.namespace.type.v1.1~abc.app.custom.event.v1.1",
         );
         assert_eq!(direction, "up");
     }
@@ -1317,8 +1372,8 @@ mod tests {
         use crate::schema_cast::GtsEntityCastResult;
 
         let direction = GtsEntityCastResult::infer_direction(
-            "gts.vendor.package.namespace.type.v1.1",
-            "gts.vendor.package.namespace.type.v1.0",
+            "gts.vendor.package.namespace.type.v1.1~abc.app.custom.event.v1.1",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
         );
         assert_eq!(direction, "down");
     }
@@ -1328,8 +1383,8 @@ mod tests {
         use crate::schema_cast::GtsEntityCastResult;
 
         let direction = GtsEntityCastResult::infer_direction(
-            "gts.vendor.package.namespace.type.v1.0",
-            "gts.vendor.package.namespace.type.v1.0",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
         );
         assert_eq!(direction, "none");
     }
@@ -1366,8 +1421,8 @@ mod tests {
         });
 
         let result = GtsEntityCastResult::cast(
-            "gts.vendor.package.namespace.type.v1.0",
-            "gts.vendor.package.namespace.type.v1.1",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
+            "gts.vendor.package.namespace.type.v1.1~abc.app.custom.event.v1.1",
             &instance,
             &from_schema,
             &to_schema,
@@ -1542,8 +1597,8 @@ mod tests {
         let instance = json!({"name": "test"});
 
         let result = GtsEntityCastResult::cast(
-            "gts.vendor.package.namespace.type.v1.1",
-            "gts.vendor.package.namespace.type.v1.0",
+            "gts.vendor.package.namespace.type.v1.1~abc.app.custom.event.v1.1",
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
             &instance,
             &from_schema,
             &to_schema,
@@ -2142,21 +2197,27 @@ mod tests {
     #[test]
     fn test_gts_ops_uuid() {
         let ops = GtsOps::new(None, None, 0);
-        let result = ops.uuid("gts.vendor.package.namespace.type.v1.0");
+        let result = ops.uuid("gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0");
         assert!(!result.uuid.is_empty());
     }
 
     #[test]
     fn test_gts_ops_match_id_pattern_valid() {
         let ops = GtsOps::new(None, None, 0);
-        let result = ops.match_id_pattern("gts.vendor.package.namespace.type.v1.0", "gts.vendor.*");
+        let result = ops.match_id_pattern(
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
+            "gts.vendor.*",
+        );
         assert!(result.is_match);
     }
 
     #[test]
     fn test_gts_ops_match_id_pattern_invalid() {
         let ops = GtsOps::new(None, None, 0);
-        let result = ops.match_id_pattern("gts.vendor.package.namespace.type.v1.0", "gts.other.*");
+        let result = ops.match_id_pattern(
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
+            "gts.other.*",
+        );
         assert!(!result.is_match);
     }
 
@@ -2454,7 +2515,7 @@ mod tests {
 
         let cfg = GtsConfig::default();
         let content = json!({
-            "id": "gts.vendor.package.namespace.type.v1.0",
+            "id": "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0",
             "user": {
                 "name": "John",
                 "age": 30
@@ -2474,7 +2535,10 @@ mod tests {
         );
 
         let result = entity.resolve_path("user.name");
-        assert_eq!(result.gts_id, "gts.vendor.package.namespace.type.v1.0");
+        assert_eq!(
+            result.gts_id,
+            "gts.vendor.package.namespace.type.v1.0~abc.app.custom.event.v1.0"
+        );
     }
 
     #[test]
