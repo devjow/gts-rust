@@ -2959,4 +2959,67 @@ mod tests {
         assert_eq!(result.id, "", "Should return empty string when no id found");
         assert!(!result.is_schema);
     }
+
+    #[test]
+    fn test_add_entity_schema_with_plain_gts_prefix_fails() {
+        let mut ops = GtsOps::new(None, None, 0);
+        let content = json!({
+            "$id": "gts.x.test6.invalid_id.plain_prefix.v1~",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"}
+            },
+            "required": ["id"]
+        });
+
+        let result = ops.add_entity(&content, false);
+        assert!(!result.ok, "Schema with plain gts. prefix in $id should fail");
+        assert!(
+            result.error.contains("Unable to detect GTS ID"),
+            "Error should mention missing GTS ID, got: {}",
+            result.error
+        );
+    }
+
+    #[test]
+    fn test_add_entity_schema_with_wildcard_in_gts_uri_fails() {
+        let mut ops = GtsOps::new(None, None, 0);
+        let content = json!({
+            "$id": "gts://gts.x.test6.events.*.v1~",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"}
+            },
+            "required": ["id"]
+        });
+
+        let result = ops.add_entity(&content, false);
+        assert!(!result.ok, "Schema with wildcard in gts:// URI should fail");
+        assert!(
+            result.error.contains("Unable to detect GTS ID") || result.error.contains("wildcard"),
+            "Error should mention invalid GTS ID or wildcard, got: {}",
+            result.error
+        );
+    }
+
+    #[test]
+    fn test_add_entity_schema_with_gts_uri_prefix_succeeds() {
+        let mut ops = GtsOps::new(None, None, 0);
+        let content = json!({
+            "$id": "gts://gts.x.test6.valid_id.with_uri.v1~",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"}
+            },
+            "required": ["id"]
+        });
+
+        let result = ops.add_entity(&content, false);
+        assert!(result.ok, "Schema with gts:// URI prefix should succeed, got error: {}", result.error);
+        assert_eq!(result.id, "gts.x.test6.valid_id.with_uri.v1~");
+        assert!(result.is_schema);
+    }
 }
