@@ -226,7 +226,17 @@ impl GtsEntity {
         if let Some(obj) = self.content.as_object() {
             if let Some(id_val) = obj.get("$id") {
                 if let Some(id_str) = id_val.as_str() {
-                    let normalized = id_str.strip_prefix(GTS_URI_PREFIX).unwrap_or(id_str).trim();
+                    let trimmed = id_str.trim();
+
+                    // Validate that schema $id uses gts:// URI format, not plain gts. prefix
+                    // According to spec: "Do not place the canonical gts. string directly in $id"
+                    if trimmed.starts_with("gts.") {
+                        // This is invalid - schemas must use gts:// URI format
+                        // We'll leave gts_id as None, which will cause registration to fail
+                        return;
+                    }
+
+                    let normalized = trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed);
                     if GtsID::is_valid(normalized) {
                         self.gts_id = GtsID::new(normalized).ok();
                         self.instance_id = Some(normalized.to_owned());
@@ -573,6 +583,13 @@ impl GtsEntity {
                 if let Some(s) = v.as_str() {
                     let trimmed = s.trim();
                     if !trimmed.is_empty() {
+                        // For schema $id fields, validate that they use gts:// URI format, not plain gts. prefix
+                        // According to spec: "Do not place the canonical gts. string directly in $id"
+                        if field == "$id" && self.is_schema && trimmed.starts_with("gts.") {
+                            // Invalid: schema $id must use gts:// URI format
+                            return None;
+                        }
+
                         // Strip the "gts://" URI prefix ONLY for $id field (JSON Schema compatibility)
                         // The gts:// prefix is ONLY valid in the $id field of JSON Schema
                         let normalized = if field == "$id" {
