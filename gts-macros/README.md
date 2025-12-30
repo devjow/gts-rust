@@ -60,9 +60,13 @@ pub struct AuditEventV1 {
 
 // Runtime usage:
 fn example() {
-    // Access schema constants
-    let base_schema = BaseEventV1::<()>::GTS_JSON_SCHEMA_WITH_REFS;
-    let audit_schema = AuditEventV1::GTS_JSON_SCHEMA_WITH_REFS;
+    // Access schema IDs
+    let base_id = BaseEventV1::<()>::gts_schema_id();
+    let audit_id = AuditEventV1::gts_schema_id();
+
+    // Get schemas as JSON
+    let base_schema = BaseEventV1::<()>::gts_schema_with_refs_as_string_pretty();
+    let audit_schema = AuditEventV1::gts_schema_with_refs_as_string_pretty();
 
     // Generate instance IDs
     let event_id = AuditEventV1::gts_make_instance_id("evt-12345.v1");
@@ -815,9 +819,9 @@ gts generate-from-rust --source src/
 ```rust
 fn main() {
     // Access schemas at any level
-    println!("Base event schema: {}", BaseEventV1::<()>::GTS_JSON_SCHEMA_WITH_REFS);
-    println!("Audit event schema: {}", AuditEventV1::<()>::GTS_JSON_SCHEMA_WITH_REFS);
-    println!("Order placed schema: {}", OrderPlacedV1::GTS_JSON_SCHEMA_WITH_REFS);
+    println!("Base event schema: {}", BaseEventV1::<()>::gts_schema_with_refs_as_string_pretty());
+    println!("Audit event schema: {}", AuditEventV1::<()>::gts_schema_with_refs_as_string_pretty());
+    println!("Order placed schema: {}", OrderPlacedV1::gts_schema_with_refs_as_string_pretty());
 
     // Generate instance IDs
     let event_id = OrderPlacedV1::gts_make_instance_id("evt-12345.v1");
@@ -986,22 +990,25 @@ Example:
 }
 ```
 
-### Schema Constants
+### Schema Generation Methods
 
-The macro generates two schema variants with **zero runtime allocation**:
+The macro generates methods for runtime schema access:
 
-- **`GTS_JSON_SCHEMA_WITH_REFS`**: Uses `$ref` in `allOf` (most memory-efficient)
-- **`GTS_JSON_SCHEMA_INLINE`**: Currently identical; true inlining requires runtime resolution
+- **`gts_schema_with_refs()`**: Returns `serde_json::Value` with `$ref` in `allOf`
+- **`gts_schema_with_refs_as_string()`**: Returns compact JSON string
+- **`gts_schema_with_refs_as_string_pretty()`**: Returns pretty-printed JSON string
 
 ```rust
-// Both are compile-time constants - no allocation at runtime!
-let schema_with_refs = AuditEventV1::<()>::GTS_JSON_SCHEMA_WITH_REFS;
-let schema_inline = AuditEventV1::<()>::GTS_JSON_SCHEMA_INLINE;
+// Get schema as JSON value
+let schema_value = AuditEventV1::<()>::gts_schema_with_refs();
 
-// Runtime schema resolution (when true inlining is needed)
-use gts::GtsStore;
-let store = GtsStore::new();
-let inlined_schema = store.resolve_schema(&schema_with_refs)?;
+// Get schema as string (compact or pretty)
+let schema_compact = AuditEventV1::<()>::gts_schema_with_refs_as_string();
+let schema_pretty = AuditEventV1::<()>::gts_schema_with_refs_as_string_pretty();
+
+// Schema IDs use LazyLock for efficient one-time initialization
+let schema_id = AuditEventV1::gts_schema_id();
+let parent_id = AuditEventV1::gts_base_schema_id();
 ```
 
 ---

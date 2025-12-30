@@ -552,10 +552,13 @@ impl Parse for GtsSchemaArgs {
 ///
 /// ## 3. Runtime API
 ///
-/// The macro generates these associated items and implements the `GtsSchema` trait:
+/// The macro generates these associated methods and implements the `GtsSchema` trait:
 ///
-/// - `GTS_JSON_SCHEMA_WITH_REFS: &'static str` - JSON Schema with `allOf` + `$ref` for inheritance (most memory-efficient)
-/// - `GTS_JSON_SCHEMA_INLINE: &'static str` - JSON Schema with parent inlined (currently identical to `WITH_REFS`; true inlining requires runtime resolution)
+/// - `gts_schema_id() -> &'static GtsSchemaId` - Get the struct's GTS schema ID
+/// - `gts_base_schema_id() -> Option<&'static GtsSchemaId>` - Get parent schema ID (None for base structs)
+/// - `gts_schema_with_refs() -> serde_json::Value` - JSON Schema with `allOf` + `$ref` for inheritance
+/// - `gts_schema_with_refs_as_string() -> String` - Schema as compact JSON string
+/// - `gts_schema_with_refs_as_string_pretty() -> String` - Schema as pretty-printed JSON string
 /// - `gts_make_instance_id(segment: &str) -> gts::GtsInstanceId` - Generate an instance ID by appending
 ///   a segment to the schema ID. The segment must be a valid GTS segment (e.g., "a.b.c.v1")
 /// - `GtsSchema` trait implementation - Enables runtime schema composition for nested generic types
@@ -576,9 +579,9 @@ impl Parse for GtsSchemaArgs {
 ///
 /// # Memory Efficiency
 ///
-/// All generated constants are compile-time strings with **zero runtime allocation**:
-/// - `GTS_JSON_SCHEMA_WITH_REFS` uses `$ref` for optimal memory usage
-/// - `GTS_JSON_SCHEMA_INLINE` is identical at compile time (true inlining requires runtime schema resolution)
+/// Schema IDs use `LazyLock` for efficient one-time initialization with **zero allocation after first access**:
+/// - `gts_schema_id()` and `gts_base_schema_id()` return static references to `GtsSchemaId` instances
+/// - Schema generation methods create JSON on-demand using schemars and the `GtsSchema` trait
 ///
 /// # Example
 ///
@@ -599,8 +602,8 @@ impl Parse for GtsSchemaArgs {
 /// }
 ///
 /// // Runtime usage:
-/// let schema_with_refs = User::GTS_JSON_SCHEMA_WITH_REFS;
-/// let schema_inline = User::GTS_JSON_SCHEMA_INLINE;
+/// let schema_id = User::gts_schema_id();
+/// let schema_json = User::gts_schema_with_refs_as_string_pretty();
 /// let instance_id = User::gts_make_instance_id("vendor.marketplace.orders.order_created.v1");
 /// assert_eq!(instance_id.as_ref(), "gts.x.core.events.topic.v1~vendor.marketplace.orders.order_created.v1");
 /// ```
