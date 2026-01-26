@@ -175,51 +175,45 @@ impl XGtsRefValidator {
         };
 
         // Check for x-gts-ref constraint
-        if let Some(x_gts_ref) = sch_obj.get("x-gts-ref") {
-            if let Some(inst_str) = inst.as_str() {
-                if let Some(ref_pattern) = x_gts_ref.as_str() {
-                    if let Some(error) =
-                        self.validate_ref_value(inst_str, ref_pattern, path, root_schema)
-                    {
-                        errors.push(error);
-                    }
-                }
-            }
+        if let Some(x_gts_ref) = sch_obj.get("x-gts-ref")
+            && let Some(inst_str) = inst.as_str()
+            && let Some(ref_pattern) = x_gts_ref.as_str()
+            && let Some(error) = self.validate_ref_value(inst_str, ref_pattern, path, root_schema)
+        {
+            errors.push(error);
         }
 
         // Recurse into object properties
         if let Some(Value::String(type_str)) = sch_obj.get("type") {
             if type_str == "object" {
-                if let Some(properties) = sch_obj.get("properties") {
-                    if let Some(properties_obj) = properties.as_object() {
-                        if let Some(inst_obj) = inst.as_object() {
-                            for (prop_name, prop_schema) in properties_obj {
-                                if let Some(prop_value) = inst_obj.get(prop_name) {
-                                    let prop_path = if path.is_empty() {
-                                        prop_name.clone()
-                                    } else {
-                                        format!("{path}.{prop_name}")
-                                    };
-                                    self.visit_instance(
-                                        prop_value,
-                                        prop_schema,
-                                        root_schema,
-                                        &prop_path,
-                                        errors,
-                                    );
-                                }
-                            }
+                if let Some(properties) = sch_obj.get("properties")
+                    && let Some(properties_obj) = properties.as_object()
+                    && let Some(inst_obj) = inst.as_object()
+                {
+                    for (prop_name, prop_schema) in properties_obj {
+                        if let Some(prop_value) = inst_obj.get(prop_name) {
+                            let prop_path = if path.is_empty() {
+                                prop_name.clone()
+                            } else {
+                                format!("{path}.{prop_name}")
+                            };
+                            self.visit_instance(
+                                prop_value,
+                                prop_schema,
+                                root_schema,
+                                &prop_path,
+                                errors,
+                            );
                         }
                     }
                 }
-            } else if type_str == "array" {
-                if let Some(items) = sch_obj.get("items") {
-                    if let Some(inst_arr) = inst.as_array() {
-                        for (idx, item) in inst_arr.iter().enumerate() {
-                            let item_path = format!("{path}[{idx}]");
-                            self.visit_instance(item, items, root_schema, &item_path, errors);
-                        }
-                    }
+            } else if type_str == "array"
+                && let Some(items) = sch_obj.get("items")
+                && let Some(inst_arr) = inst.as_array()
+            {
+                for (idx, item) in inst_arr.iter().enumerate() {
+                    let item_path = format!("{path}[{idx}]");
+                    self.visit_instance(item, items, root_schema, &item_path, errors);
                 }
             }
         }
@@ -504,15 +498,14 @@ impl XGtsRefValidator {
         }
 
         // If current is an object with x-gts-ref, resolve it
-        if let Some(obj) = current.as_object() {
-            if let Some(ref_value) = obj.get("x-gts-ref") {
-                if let Some(ref_str) = ref_value.as_str() {
-                    if ref_str.starts_with('/') {
-                        return Self::resolve_pointer(schema, ref_str);
-                    }
-                    return Some(ref_str.to_owned());
-                }
+        if let Some(obj) = current.as_object()
+            && let Some(ref_value) = obj.get("x-gts-ref")
+            && let Some(ref_str) = ref_value.as_str()
+        {
+            if ref_str.starts_with('/') {
+                return Self::resolve_pointer(schema, ref_str);
             }
+            return Some(ref_str.to_owned());
         }
 
         None

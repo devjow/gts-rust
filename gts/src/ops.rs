@@ -184,10 +184,10 @@ impl GtsOps {
 
     fn load_config(config_path: Option<String>) -> GtsConfig {
         // Try user-provided path
-        if let Some(path) = config_path {
-            if let Ok(cfg) = Self::load_config_from_path(&PathBuf::from(path)) {
-                return cfg;
-            }
+        if let Some(path) = config_path
+            && let Ok(cfg) = Self::load_config_from_path(&PathBuf::from(path))
+        {
+            return cfg;
         }
 
         // Try default path (relative to current directory)
@@ -289,7 +289,10 @@ impl GtsOps {
                         self.get_details(&entity)
                     )
                 } else {
-                    format!("Unable to detect ID in instance entity. Instances must have an 'id' field (or one of the configured entity_id_fields):\n{}", self.get_details(&entity))
+                    format!(
+                        "Unable to detect ID in instance entity. Instances must have an 'id' field (or one of the configured entity_id_fields):\n{}",
+                        self.get_details(&entity)
+                    )
                 },
             };
         };
@@ -309,35 +312,36 @@ impl GtsOps {
         }
 
         // Always validate schemas
-        if entity.is_schema {
-            if let Err(e) = self.store.validate_schema(&entity_id) {
-                return GtsAddEntityResult {
-                    ok: false,
-                    id: String::new(),
-                    schema_id: None,
-                    is_schema: false,
-                    error: format!(
-                        "Schema validation failed: {e}\n{}",
-                        self.get_details(&entity)
-                    ),
-                };
-            }
+        if entity.is_schema
+            && let Err(e) = self.store.validate_schema(&entity_id)
+        {
+            return GtsAddEntityResult {
+                ok: false,
+                id: String::new(),
+                schema_id: None,
+                is_schema: false,
+                error: format!(
+                    "Schema validation failed: {e}\n{}",
+                    self.get_details(&entity)
+                ),
+            };
         }
 
         // If validation is requested, validate the instance as well
-        if validate && !entity.is_schema {
-            if let Err(e) = self.store.validate_instance(&entity_id) {
-                return GtsAddEntityResult {
-                    ok: false,
-                    id: String::new(),
-                    schema_id: None,
-                    is_schema: false,
-                    error: format!(
-                        "Instance validation failed: {e}\n{}",
-                        self.get_details(&entity)
-                    ),
-                };
-            }
+        if validate
+            && !entity.is_schema
+            && let Err(e) = self.store.validate_instance(&entity_id)
+        {
+            return GtsAddEntityResult {
+                ok: false,
+                id: String::new(),
+                schema_id: None,
+                is_schema: false,
+                error: format!(
+                    "Instance validation failed: {e}\n{}",
+                    self.get_details(&entity)
+                ),
+            };
         }
 
         // println!("submitted: {}", self.get_content_pretty(&entity));
@@ -1136,11 +1140,13 @@ mod tests {
         );
         assert!(json.get("valid").expect("test").as_bool().expect("test"));
         assert!(json.get("is_schema").expect("test").as_bool().is_some());
-        assert!(!json
-            .get("is_wildcard")
-            .expect("test")
-            .as_bool()
-            .expect("test"));
+        assert!(
+            !json
+                .get("is_wildcard")
+                .expect("test")
+                .as_bool()
+                .expect("test")
+        );
     }
 
     #[test]
@@ -1298,11 +1304,13 @@ mod tests {
             json.get("id").expect("test").as_str().expect("test"),
             "gts.vendor.package.namespace.type.v1.0"
         );
-        assert!(!json
-            .get("is_schema")
-            .expect("test")
-            .as_bool()
-            .expect("test"));
+        assert!(
+            !json
+                .get("is_schema")
+                .expect("test")
+                .as_bool()
+                .expect("test")
+        );
         assert!(json.contains_key("schema_id"));
     }
 
@@ -1420,11 +1428,13 @@ mod tests {
         assert!(json.contains_key("schema_id"));
         assert!(json.contains_key("selected_entity_field"));
         assert!(json.contains_key("selected_schema_id_field"));
-        assert!(!json
-            .get("is_schema")
-            .expect("test")
-            .as_bool()
-            .expect("test"));
+        assert!(
+            !json
+                .get("is_schema")
+                .expect("test")
+                .as_bool()
+                .expect("test")
+        );
     }
 
     #[test]

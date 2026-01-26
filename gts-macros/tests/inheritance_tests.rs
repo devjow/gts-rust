@@ -351,7 +351,10 @@ mod tests {
                 == "gts.x.core.events.type.v1~"
         );
         let _audit_payload_id = AuditPayloadV1::<()>::gts_schema_id().clone().into_string();
-        assert!(PlaceOrderDataV1::gts_schema_id().clone().into_string() == "gts.x.core.events.type.v1~x.core.audit.event.v1~x.marketplace.orders.purchase.v1~");
+        assert!(
+            PlaceOrderDataV1::gts_schema_id().clone().into_string()
+                == "gts.x.core.events.type.v1~x.core.audit.event.v1~x.marketplace.orders.purchase.v1~"
+        );
 
         // BaseEventV1 should have direct properties, no allOf
         assert!(
@@ -824,10 +827,10 @@ mod tests {
             serde_json::to_value(&topic_instance).expect("Should convert to JSON");
 
         // Ensure the config field is an empty object, not null
-        if let Some(config_obj) = instance_json.get_mut("config") {
-            if *config_obj == serde_json::Value::Null {
-                *config_obj = serde_json::json!({});
-            }
+        if let Some(config_obj) = instance_json.get_mut("config")
+            && *config_obj == serde_json::Value::Null
+        {
+            *config_obj = serde_json::json!({});
         }
 
         let add_result = ops.add_entity(&instance_json, true);
@@ -956,10 +959,10 @@ mod tests {
             .expect("TopicV1<OrderTopicConfigV1> should serialize");
 
         // Fix the config field for TopicV1<()> - convert null to {} to match schema
-        if let Some(config_obj) = topic_json.get_mut("config") {
-            if *config_obj == serde_json::Value::Null {
-                *config_obj = serde_json::json!({});
-            }
+        if let Some(config_obj) = topic_json.get_mut("config")
+            && *config_obj == serde_json::Value::Null
+        {
+            *config_obj = serde_json::json!({});
         }
 
         // Add instances to the store
@@ -1809,10 +1812,10 @@ mod tests {
 
     /// Helper to fix null config fields to empty objects for schema validation
     fn fix_null_config(json: &mut serde_json::Value) {
-        if let Some(config_obj) = json.get_mut("config") {
-            if *config_obj == serde_json::Value::Null {
-                *config_obj = serde_json::json!({});
-            }
+        if let Some(config_obj) = json.get_mut("config")
+            && *config_obj == serde_json::Value::Null
+        {
+            *config_obj = serde_json::json!({});
         }
     }
 

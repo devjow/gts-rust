@@ -113,15 +113,13 @@ pub trait GtsSchema {
 
         // If we have a generic field, ensure it's just {"type": "object"} without additionalProperties
         // This field will be extended by child schemas
-        if let Some(gf) = generic_field {
-            if let Some(props) = current
+        if let Some(gf) = generic_field
+            && let Some(props) = current
                 .get_mut("properties")
                 .and_then(|v| v.as_object_mut())
-            {
-                if props.contains_key(gf) {
-                    props.insert(gf.to_owned(), serde_json::json!({"type": "object"}));
-                }
-            }
+            && props.contains_key(gf)
+        {
+            props.insert(gf.to_owned(), serde_json::json!({"type": "object"}));
         }
 
         // Wrap from inner to outer - parent levels don't need additionalProperties: false

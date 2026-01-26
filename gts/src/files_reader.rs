@@ -61,28 +61,27 @@ impl GtsFileReader {
                     let path = entry.path();
 
                     // Skip excluded directories
-                    if path.is_dir() {
-                        if let Some(name) = path.file_name() {
-                            if EXCLUDE_LIST.contains(&name.to_string_lossy().as_ref()) {
-                                continue;
-                            }
-                        }
+                    if path.is_dir()
+                        && let Some(name) = path.file_name()
+                        && EXCLUDE_LIST.contains(&name.to_string_lossy().as_ref())
+                    {
+                        continue;
                     }
 
-                    if path.is_file() {
-                        if let Some(ext) = path.extension() {
-                            let ext_str = ext.to_string_lossy().to_lowercase();
-                            if VALID_EXTENSIONS.contains(&format!(".{ext_str}").as_str()) {
-                                let rp = path
-                                    .canonicalize()
-                                    .unwrap_or_else(|_| path.to_path_buf())
-                                    .to_string_lossy()
-                                    .to_string();
-                                if !seen.contains(&rp) {
-                                    seen.insert(rp.clone());
-                                    tracing::debug!("- discovered file: {:?}", path);
-                                    collected.push(PathBuf::from(rp));
-                                }
+                    if path.is_file()
+                        && let Some(ext) = path.extension()
+                    {
+                        let ext_str = ext.to_string_lossy().to_lowercase();
+                        if VALID_EXTENSIONS.contains(&format!(".{ext_str}").as_str()) {
+                            let rp = path
+                                .canonicalize()
+                                .unwrap_or_else(|_| path.to_path_buf())
+                                .to_string_lossy()
+                                .to_string();
+                            if !seen.contains(&rp) {
+                                seen.insert(rp.clone());
+                                tracing::debug!("- discovered file: {:?}", path);
+                                collected.push(PathBuf::from(rp));
                             }
                         }
                     }

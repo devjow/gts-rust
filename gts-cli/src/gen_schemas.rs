@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use gts::{GtsInstanceId, GtsSchemaId};
 use regex::Regex;
 use std::collections::HashMap;
@@ -140,7 +140,9 @@ pub fn generate_schemas_from_rust(
     println!("  Schemas generated: {schemas_generated}");
 
     if schemas_generated == 0 {
-        println!("\n- No schemas found. Make sure your structs are annotated with `#[struct_to_gts_schema(...)]`");
+        println!(
+            "\n- No schemas found. Make sure your structs are annotated with `#[struct_to_gts_schema(...)]`"
+        );
     }
 
     Ok(())
@@ -393,7 +395,8 @@ fn build_json_schema(
     required.sort();
 
     // Build schema based on whether this has a parent
-    let schema = match base {
+
+    match base {
         BaseAttr::IsBase => {
             // Base type - simple flat schema
             let mut s = json!({
@@ -445,9 +448,7 @@ fn build_json_schema(
 
             s
         }
-    };
-
-    schema
+    }
 }
 
 /// Derive parent schema ID from child schema ID

@@ -136,21 +136,20 @@ impl GtsEntityCastResult {
 
     #[must_use]
     pub fn infer_direction(from_id: &str, to_id: &str) -> String {
-        if let (Ok(gid_from), Ok(gid_to)) = (GtsID::new(from_id), GtsID::new(to_id)) {
-            if let (Some(from_seg), Some(to_seg)) = (
+        if let (Ok(gid_from), Ok(gid_to)) = (GtsID::new(from_id), GtsID::new(to_id))
+            && let (Some(from_seg), Some(to_seg)) = (
                 gid_from.gts_id_segments.last(),
                 gid_to.gts_id_segments.last(),
-            ) {
-                if let (Some(from_minor), Some(to_minor)) = (from_seg.ver_minor, to_seg.ver_minor) {
-                    if to_minor > from_minor {
-                        return "up".to_owned();
-                    }
-                    if to_minor < from_minor {
-                        return "down".to_owned();
-                    }
-                    return "none".to_owned();
-                }
+            )
+            && let (Some(from_minor), Some(to_minor)) = (from_seg.ver_minor, to_seg.ver_minor)
+        {
+            if to_minor > from_minor {
+                return "up".to_owned();
             }
+            if to_minor < from_minor {
+                return "down".to_owned();
+            }
+            return "none".to_owned();
         }
         "unknown".to_owned()
     }
@@ -160,16 +159,15 @@ impl GtsEntityCastResult {
             if obj.contains_key("properties") || obj.contains_key("required") {
                 return s.clone();
             }
-            if let Some(all_of) = obj.get("allOf") {
-                if let Some(arr) = all_of.as_array() {
-                    for part in arr {
-                        if let Some(part_obj) = part.as_object() {
-                            if part_obj.contains_key("properties")
-                                || part_obj.contains_key("required")
-                            {
-                                return part.clone();
-                            }
-                        }
+            if let Some(all_of) = obj.get("allOf")
+                && let Some(arr) = all_of.as_array()
+            {
+                for part in arr {
+                    if let Some(part_obj) = part.as_object()
+                        && (part_obj.contains_key("properties")
+                            || part_obj.contains_key("required"))
+                    {
+                        return part.clone();
                     }
                 }
             }
@@ -220,28 +218,27 @@ impl GtsEntityCastResult {
 
         // 1) Ensure required properties exist (fill defaults if provided)
         for prop in &required {
-            if !result.contains_key(prop) {
-                if let Some(p_schema) = target_props.get(prop) {
-                    if let Some(p_obj) = p_schema.as_object() {
-                        if let Some(default) = p_obj.get("default") {
-                            result.insert(prop.clone(), default.clone());
-                            let path = if base_path.is_empty() {
-                                prop.clone()
-                            } else {
-                                format!("{base_path}.{prop}")
-                            };
-                            added.push(path);
-                        } else {
-                            let path = if base_path.is_empty() {
-                                prop.clone()
-                            } else {
-                                format!("{base_path}.{prop}")
-                            };
-                            incompatibility_reasons.push(format!(
-                                "Missing required property '{path}' and no default is defined"
-                            ));
-                        }
-                    }
+            if !result.contains_key(prop)
+                && let Some(p_schema) = target_props.get(prop)
+                && let Some(p_obj) = p_schema.as_object()
+            {
+                if let Some(default) = p_obj.get("default") {
+                    result.insert(prop.clone(), default.clone());
+                    let path = if base_path.is_empty() {
+                        prop.clone()
+                    } else {
+                        format!("{base_path}.{prop}")
+                    };
+                    added.push(path);
+                } else {
+                    let path = if base_path.is_empty() {
+                        prop.clone()
+                    } else {
+                        format!("{base_path}.{prop}")
+                    };
+                    incompatibility_reasons.push(format!(
+                        "Missing required property '{path}' and no default is defined"
+                    ));
                 }
             }
         }
@@ -251,38 +248,31 @@ impl GtsEntityCastResult {
             if required.contains(prop) {
                 continue;
             }
-            if !result.contains_key(prop) {
-                if let Some(p_obj) = p_schema.as_object() {
-                    if let Some(default) = p_obj.get("default") {
-                        result.insert(prop.clone(), default.clone());
-                        let path = if base_path.is_empty() {
-                            prop.clone()
-                        } else {
-                            format!("{base_path}.{prop}")
-                        };
-                        added.push(path);
-                    }
-                }
+            if !result.contains_key(prop)
+                && let Some(p_obj) = p_schema.as_object()
+                && let Some(default) = p_obj.get("default")
+            {
+                result.insert(prop.clone(), default.clone());
+                let path = if base_path.is_empty() {
+                    prop.clone()
+                } else {
+                    format!("{base_path}.{prop}")
+                };
+                added.push(path);
             }
         }
 
         // 2.5) Update const values to match target schema
         for (prop, p_schema) in &target_props {
-            if let Some(p_obj) = p_schema.as_object() {
-                if let Some(const_value) = p_obj.get("const") {
-                    if let Some(old_value) = result.get(prop) {
-                        if let (Some(const_str), Some(old_str)) =
-                            (const_value.as_str(), old_value.as_str())
-                        {
-                            if GtsID::is_valid(const_str)
-                                && GtsID::is_valid(old_str)
-                                && old_str != const_str
-                            {
-                                result.insert(prop.clone(), const_value.clone());
-                            }
-                        }
-                    }
-                }
+            if let Some(p_obj) = p_schema.as_object()
+                && let Some(const_value) = p_obj.get("const")
+                && let Some(old_value) = result.get(prop)
+                && let (Some(const_str), Some(old_str)) = (const_value.as_str(), old_value.as_str())
+                && GtsID::is_valid(const_str)
+                && GtsID::is_valid(old_str)
+                && old_str != const_str
+            {
+                result.insert(prop.clone(), const_value.clone());
             }
         }
 
@@ -304,66 +294,51 @@ impl GtsEntityCastResult {
 
         // 4) Recurse into nested object properties
         for (prop, p_schema) in &target_props {
-            if let Some(val) = result.get(prop) {
-                if let Some(p_obj) = p_schema.as_object() {
-                    if let Some(p_type) = p_obj.get("type").and_then(|t| t.as_str()) {
-                        if p_type == "object" {
-                            if let Some(val_obj) = val.as_object() {
-                                let nested_schema = Self::effective_object_schema(p_schema);
-                                let new_base = if base_path.is_empty() {
-                                    prop.clone()
-                                } else {
-                                    format!("{base_path}.{prop}")
-                                };
-                                let (new_obj, add_sub, rem_sub, new_reasons) =
-                                    Self::cast_instance_to_schema(
-                                        val_obj,
-                                        &nested_schema,
-                                        &new_base,
-                                    )?;
-                                result.insert(prop.clone(), Value::Object(new_obj));
-                                added.extend(add_sub);
-                                removed.extend(rem_sub);
-                                incompatibility_reasons.extend(new_reasons);
-                            }
-                        } else if p_type == "array" {
-                            if let Some(val_arr) = val.as_array() {
-                                if let Some(items_schema) = p_obj.get("items") {
-                                    if let Some(items_obj) = items_schema.as_object() {
-                                        if items_obj.get("type").and_then(|t| t.as_str())
-                                            == Some("object")
-                                        {
-                                            let nested_schema =
-                                                Self::effective_object_schema(items_schema);
-                                            let mut new_list = Vec::new();
-                                            for (idx, item) in val_arr.iter().enumerate() {
-                                                if let Some(item_obj) = item.as_object() {
-                                                    let new_base = if base_path.is_empty() {
-                                                        format!("{prop}[{idx}]")
-                                                    } else {
-                                                        format!("{base_path}.{prop}[{idx}]")
-                                                    };
-                                                    let (new_item, add_sub, rem_sub, new_reasons) =
-                                                        Self::cast_instance_to_schema(
-                                                            item_obj,
-                                                            &nested_schema,
-                                                            &new_base,
-                                                        )?;
-                                                    new_list.push(Value::Object(new_item));
-                                                    added.extend(add_sub);
-                                                    removed.extend(rem_sub);
-                                                    incompatibility_reasons.extend(new_reasons);
-                                                } else {
-                                                    new_list.push(item.clone());
-                                                }
-                                            }
-                                            result.insert(prop.clone(), Value::Array(new_list));
-                                        }
-                                    }
-                                }
-                            }
+            if let Some(val) = result.get(prop)
+                && let Some(p_obj) = p_schema.as_object()
+                && let Some(p_type) = p_obj.get("type").and_then(|t| t.as_str())
+            {
+                if p_type == "object" {
+                    if let Some(val_obj) = val.as_object() {
+                        let nested_schema = Self::effective_object_schema(p_schema);
+                        let new_base = if base_path.is_empty() {
+                            prop.clone()
+                        } else {
+                            format!("{base_path}.{prop}")
+                        };
+                        let (new_obj, add_sub, rem_sub, new_reasons) =
+                            Self::cast_instance_to_schema(val_obj, &nested_schema, &new_base)?;
+                        result.insert(prop.clone(), Value::Object(new_obj));
+                        added.extend(add_sub);
+                        removed.extend(rem_sub);
+                        incompatibility_reasons.extend(new_reasons);
+                    }
+                } else if p_type == "array"
+                    && let Some(val_arr) = val.as_array()
+                    && let Some(items_schema) = p_obj.get("items")
+                    && let Some(items_obj) = items_schema.as_object()
+                    && items_obj.get("type").and_then(|t| t.as_str()) == Some("object")
+                {
+                    let nested_schema = Self::effective_object_schema(items_schema);
+                    let mut new_list = Vec::new();
+                    for (idx, item) in val_arr.iter().enumerate() {
+                        if let Some(item_obj) = item.as_object() {
+                            let new_base = if base_path.is_empty() {
+                                format!("{prop}[{idx}]")
+                            } else {
+                                format!("{base_path}.{prop}[{idx}]")
+                            };
+                            let (new_item, add_sub, rem_sub, new_reasons) =
+                                Self::cast_instance_to_schema(item_obj, &nested_schema, &new_base)?;
+                            new_list.push(Value::Object(new_item));
+                            added.extend(add_sub);
+                            removed.extend(rem_sub);
+                            incompatibility_reasons.extend(new_reasons);
+                        } else {
+                            new_list.push(item.clone());
                         }
                     }
+                    result.insert(prop.clone(), Value::Array(new_list));
                 }
             }
         }
@@ -379,63 +354,53 @@ impl GtsEntityCastResult {
 
         if let Some(obj) = schema.as_object() {
             // Merge allOf schemas
-            if let Some(all_of) = obj.get("allOf") {
-                if let Some(arr) = all_of.as_array() {
-                    for sub_schema in arr {
-                        let flattened = Self::flatten_schema(sub_schema);
-                        if let Some(flat_obj) = flattened.as_object() {
-                            // Merge properties
-                            if let Some(props) = flat_obj.get("properties") {
-                                if let Some(props_obj) = props.as_object() {
-                                    if let Some(result_props) =
-                                        result.get_mut("properties").and_then(|p| p.as_object_mut())
-                                    {
-                                        for (k, v) in props_obj {
-                                            result_props.insert(k.clone(), v.clone());
-                                        }
-                                    }
-                                }
+            if let Some(all_of) = obj.get("allOf")
+                && let Some(arr) = all_of.as_array()
+            {
+                for sub_schema in arr {
+                    let flattened = Self::flatten_schema(sub_schema);
+                    if let Some(flat_obj) = flattened.as_object() {
+                        // Merge properties
+                        if let Some(props) = flat_obj.get("properties")
+                            && let Some(props_obj) = props.as_object()
+                            && let Some(result_props) =
+                                result.get_mut("properties").and_then(|p| p.as_object_mut())
+                        {
+                            for (k, v) in props_obj {
+                                result_props.insert(k.clone(), v.clone());
                             }
-                            // Merge required
-                            if let Some(req) = flat_obj.get("required") {
-                                if let Some(req_arr) = req.as_array() {
-                                    if let Some(result_req) =
-                                        result.get_mut("required").and_then(|r| r.as_array_mut())
-                                    {
-                                        result_req.extend(req_arr.clone());
-                                    }
-                                }
-                            }
-                            // Preserve additionalProperties
-                            if let Some(additional) = flat_obj.get("additionalProperties") {
-                                result
-                                    .insert("additionalProperties".to_owned(), additional.clone());
-                            }
+                        }
+                        // Merge required
+                        if let Some(req) = flat_obj.get("required")
+                            && let Some(req_arr) = req.as_array()
+                            && let Some(result_req) =
+                                result.get_mut("required").and_then(|r| r.as_array_mut())
+                        {
+                            result_req.extend(req_arr.clone());
+                        }
+                        // Preserve additionalProperties
+                        if let Some(additional) = flat_obj.get("additionalProperties") {
+                            result.insert("additionalProperties".to_owned(), additional.clone());
                         }
                     }
                 }
             }
 
             // Add direct properties and required
-            if let Some(props) = obj.get("properties") {
-                if let Some(props_obj) = props.as_object() {
-                    if let Some(result_props) =
-                        result.get_mut("properties").and_then(|p| p.as_object_mut())
-                    {
-                        for (k, v) in props_obj {
-                            result_props.insert(k.clone(), v.clone());
-                        }
-                    }
+            if let Some(props) = obj.get("properties")
+                && let Some(props_obj) = props.as_object()
+                && let Some(result_props) =
+                    result.get_mut("properties").and_then(|p| p.as_object_mut())
+            {
+                for (k, v) in props_obj {
+                    result_props.insert(k.clone(), v.clone());
                 }
             }
-            if let Some(req) = obj.get("required") {
-                if let Some(req_arr) = req.as_array() {
-                    if let Some(result_req) =
-                        result.get_mut("required").and_then(|r| r.as_array_mut())
-                    {
-                        result_req.extend(req_arr.clone());
-                    }
-                }
+            if let Some(req) = obj.get("required")
+                && let Some(req_arr) = req.as_array()
+                && let Some(result_req) = result.get_mut("required").and_then(|r| r.as_array_mut())
+            {
+                result_req.extend(req_arr.clone());
             }
             // Preserve additionalProperties from top level
             if let Some(additional) = obj.get("additionalProperties") {
@@ -640,10 +605,10 @@ impl GtsEntityCastResult {
                 let old_type = old_prop_schema.get("type").and_then(|t| t.as_str());
                 let new_type = new_prop_schema.get("type").and_then(|t| t.as_str());
 
-                if let (Some(ot), Some(nt)) = (old_type, new_type) {
-                    if ot != nt {
-                        errors.push(format!("Property '{prop}' type changed from {ot} to {nt}"));
-                    }
+                if let (Some(ot), Some(nt)) = (old_type, new_type)
+                    && ot != nt
+                {
+                    errors.push(format!("Property '{prop}' type changed from {ot} to {nt}"));
                 }
 
                 // Check enum constraints
@@ -683,16 +648,16 @@ impl GtsEntityCastResult {
                 }
 
                 // Check constraint compatibility
-                if let Some(old_obj) = old_prop_schema.as_object() {
-                    if let Some(new_obj) = new_prop_schema.as_object() {
-                        let constraint_errors = Self::check_constraint_compatibility(
-                            prop,
-                            old_obj,
-                            new_obj,
-                            check_backward,
-                        );
-                        errors.extend(constraint_errors);
-                    }
+                if let Some(old_obj) = old_prop_schema.as_object()
+                    && let Some(new_obj) = new_prop_schema.as_object()
+                {
+                    let constraint_errors = Self::check_constraint_compatibility(
+                        prop,
+                        old_obj,
+                        new_obj,
+                        check_backward,
+                    );
+                    errors.extend(constraint_errors);
                 }
 
                 // Recursively check nested object properties

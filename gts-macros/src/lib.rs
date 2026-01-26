@@ -4,8 +4,9 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
+    Data, DeriveInput, Fields, LitStr, Token,
     parse::{Parse, ParseStream},
-    parse_macro_input, Data, DeriveInput, Fields, LitStr, Token,
+    parse_macro_input,
 };
 
 // Field name constants to avoid duplication
@@ -162,10 +163,10 @@ fn is_type_named(ty: &syn::Type, name: &str) -> bool {
     match ty {
         syn::Type::Path(type_path) => {
             // Check for simple name or gts::name
-            if let Some(last_segment) = type_path.path.segments.last() {
-                if last_segment.ident == name {
-                    return true;
-                }
+            if let Some(last_segment) = type_path.path.segments.last()
+                && last_segment.ident == name
+            {
+                return true;
             }
 
             // Check for full path like gts::Name
@@ -277,14 +278,14 @@ fn validate_field_types(
     if has_valid_id_field && has_valid_type_field {
         return Err(syn::Error::new_spanned(
             &input.ident,
-            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId, but not both. Found both valid ID and GTS Type fields."
+            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId, but not both. Found both valid ID and GTS Type fields.",
         ));
     }
 
     if !has_valid_id_field && !has_valid_type_field {
         return Err(syn::Error::new_spanned(
             &input.ident,
-            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId"
+            "struct_to_gts_schema: Base structs must have either an ID field (one of: $id, id, gts_id, or gtsId) of type GtsInstanceId OR a GTS Type field (one of: type, gts_type, gtsType, or schema) of type GtsSchemaId",
         ));
     }
 
@@ -666,7 +667,7 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                      Use a struct with named fields or a unit struct (for empty nested types)",
                 )
                 .to_compile_error()
-                .into()
+                .into();
             }
         },
         _ => {
@@ -675,7 +676,7 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 "struct_to_gts_schema: Only structs are supported",
             )
             .to_compile_error()
-            .into()
+            .into();
         }
     };
 
@@ -756,13 +757,13 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
         for field in fields {
             let field_type = &field.ty;
             let field_type_str = quote::quote!(#field_type).to_string().replace(' ', "");
-            if field_type_str == *gp {
-                if let Some(ident) = &field.ident {
-                    // Use serde rename if present, otherwise use the field identifier
-                    generic_field_name =
-                        Some(get_serde_rename(field).unwrap_or_else(|| ident.to_string()));
-                    break;
-                }
+            if field_type_str == *gp
+                && let Some(ident) = &field.ident
+            {
+                // Use serde rename if present, otherwise use the field identifier
+                generic_field_name =
+                    Some(get_serde_rename(field).unwrap_or_else(|| ident.to_string()));
+                break;
             }
         }
     }

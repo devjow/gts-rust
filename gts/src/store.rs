@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::entities::GtsEntity;
-use crate::gts::{GtsID, GtsWildcard, GTS_URI_PREFIX};
+use crate::gts::{GTS_URI_PREFIX, GtsID, GtsWildcard};
 use crate::schema_cast::GtsEntityCastResult;
 
 #[derive(Debug, Error)]
@@ -119,11 +119,11 @@ impl GtsStore {
         }
 
         // Try to fetch from reader
-        if let Some(ref reader) = self.reader {
-            if let Some(entity) = reader.read_by_id(entity_id) {
-                self.by_id.insert(entity_id.to_owned(), entity);
-                return self.by_id.get(entity_id);
-            }
+        if let Some(ref reader) = self.reader
+            && let Some(entity) = reader.read_by_id(entity_id)
+        {
+            self.by_id.insert(entity_id.to_owned(), entity);
+            return self.by_id.get(entity_id);
         }
 
         None
@@ -182,32 +182,32 @@ impl GtsStore {
                     let canonical_ref = ref_uri.strip_prefix(GTS_URI_PREFIX).unwrap_or(ref_uri);
 
                     // Try to resolve the reference using canonical ID
-                    if let Some(entity) = self.by_id.get(canonical_ref) {
-                        if entity.is_schema {
-                            // Recursively resolve refs in the referenced schema
-                            let mut resolved = self.resolve_schema_refs(&entity.content);
+                    if let Some(entity) = self.by_id.get(canonical_ref)
+                        && entity.is_schema
+                    {
+                        // Recursively resolve refs in the referenced schema
+                        let mut resolved = self.resolve_schema_refs(&entity.content);
 
-                            // Remove $id and $schema from resolved content to avoid URL resolution issues
-                            if let Value::Object(ref mut resolved_map) = resolved {
-                                resolved_map.remove("$id");
-                                resolved_map.remove("$schema");
-                            }
+                        // Remove $id and $schema from resolved content to avoid URL resolution issues
+                        if let Value::Object(ref mut resolved_map) = resolved {
+                            resolved_map.remove("$id");
+                            resolved_map.remove("$schema");
+                        }
 
-                            // If the original object has only $ref, return the resolved schema
-                            if map.len() == 1 {
-                                return resolved;
-                            }
+                        // If the original object has only $ref, return the resolved schema
+                        if map.len() == 1 {
+                            return resolved;
+                        }
 
-                            // Otherwise, merge the resolved schema with other properties
-                            if let Value::Object(resolved_map) = resolved {
-                                let mut merged = resolved_map;
-                                for (k, v) in map {
-                                    if k != "$ref" {
-                                        merged.insert(k.clone(), self.resolve_schema_refs(v));
-                                    }
+                        // Otherwise, merge the resolved schema with other properties
+                        if let Value::Object(resolved_map) = resolved {
+                            let mut merged = resolved_map;
+                            for (k, v) in map {
+                                if k != "$ref" {
+                                    merged.insert(k.clone(), self.resolve_schema_refs(v));
                                 }
-                                return Value::Object(merged);
                             }
+                            return Value::Object(merged);
                         }
                     }
                     // If we can't resolve, remove the $ref to avoid "relative URL" errors
@@ -250,10 +250,10 @@ impl GtsStore {
                                     if let Some(Value::Array(req_array)) = item_map.get("required")
                                     {
                                         for v in req_array {
-                                            if let Value::String(s) = v {
-                                                if !merged_required.contains(s) {
-                                                    merged_required.push(s.to_owned());
-                                                }
+                                            if let Value::String(s) = v
+                                                && !merged_required.contains(s)
+                                            {
+                                                merged_required.push(s.to_owned());
                                             }
                                         }
                                     }
@@ -887,10 +887,8 @@ impl GtsStore {
         wildcard_pattern: Option<&GtsWildcard>,
         exact_gts_id: Option<&GtsID>,
     ) -> bool {
-        if is_wildcard {
-            if let Some(pattern) = wildcard_pattern {
-                return entity_id.wildcard_match(pattern);
-            }
+        if is_wildcard && let Some(pattern) = wildcard_pattern {
+            return entity_id.wildcard_match(pattern);
         }
 
         // For non-wildcard patterns, use wildcard_match to support version flexibility
@@ -2022,11 +2020,13 @@ mod tests {
         let result = store.get_schema_content("gts.vendor.package.namespace.type.v1.0~");
         assert!(result.is_ok());
         let schema = result.expect("test");
-        assert!(schema
-            .get("properties")
-            .expect("test")
-            .get("email")
-            .is_some());
+        assert!(
+            schema
+                .get("properties")
+                .expect("test")
+                .get("email")
+                .is_some()
+        );
     }
 
     #[test]
@@ -3040,10 +3040,10 @@ mod tests {
             if let Some(entity) = store.get(&id1) {
                 all_entities.push((id1, entity.content.get("category").cloned()));
             }
-            if i > 0 {
-                if let Some(entity) = store.get(&id2) {
-                    all_entities.push((id2, entity.content.get("category").cloned()));
-                }
+            if i > 0
+                && let Some(entity) = store.get(&id2)
+            {
+                all_entities.push((id2, entity.content.get("category").cloned()));
             }
         }
 

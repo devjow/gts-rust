@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::gts::{GtsID, GTS_URI_PREFIX};
+use crate::gts::{GTS_URI_PREFIX, GtsID};
 use crate::path_resolver::JsonPathResolver;
 use crate::schema_cast::{GtsEntityCastResult, SchemaCastError};
 
@@ -187,12 +187,11 @@ impl GtsEntity {
         }
 
         // Extract description
-        if let Some(obj) = content.as_object() {
-            if let Some(desc) = obj.get("description") {
-                if let Some(s) = desc.as_str() {
-                    s.clone_into(&mut entity.description);
-                }
-            }
+        if let Some(obj) = content.as_object()
+            && let Some(desc) = obj.get("description")
+            && let Some(s) = desc.as_str()
+        {
+            s.clone_into(&mut entity.description);
         }
 
         // Extract references
@@ -207,12 +206,11 @@ impl GtsEntity {
     /// Check if the JSON has a "$schema" field - this is the ONLY way to determine if it's a schema.
     /// Per GTS spec: "if json has "$schema" - it's a schema, always. Otherwise, it's instance, always!"
     fn has_schema_field(&self) -> bool {
-        if let Some(obj) = self.content.as_object() {
-            if let Some(schema_val) = obj.get("$schema") {
-                if let Some(schema_str) = schema_val.as_str() {
-                    return !schema_str.is_empty();
-                }
-            }
+        if let Some(obj) = self.content.as_object()
+            && let Some(schema_val) = obj.get("$schema")
+            && let Some(schema_str) = schema_val.as_str()
+        {
+            return !schema_str.is_empty();
         }
         false
     }
@@ -224,67 +222,67 @@ impl GtsEntity {
     fn extract_schema_ids(&mut self, cfg: &GtsConfig) {
         // Extract GTS ID from $id field
         if let Some(obj) = self.content.as_object() {
-            if let Some(id_val) = obj.get("$id") {
-                if let Some(id_str) = id_val.as_str() {
-                    let trimmed = id_str.trim();
+            if let Some(id_val) = obj.get("$id")
+                && let Some(id_str) = id_val.as_str()
+            {
+                let trimmed = id_str.trim();
 
-                    // Validate that schema $id uses gts:// URI format, not plain gts. prefix
-                    // According to spec: "Do not place the canonical gts. string directly in $id"
-                    if trimmed.starts_with("gts.") {
-                        // This is invalid - schemas must use gts:// URI format
-                        // We'll leave gts_id as None, which will cause registration to fail
-                        return;
-                    }
+                // Validate that schema $id uses gts:// URI format, not plain gts. prefix
+                // According to spec: "Do not place the canonical gts. string directly in $id"
+                if trimmed.starts_with("gts.") {
+                    // This is invalid - schemas must use gts:// URI format
+                    // We'll leave gts_id as None, which will cause registration to fail
+                    return;
+                }
 
-                    let normalized = trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed);
-                    if GtsID::is_valid(normalized) {
-                        self.gts_id = GtsID::new(normalized).ok();
-                        self.instance_id = Some(normalized.to_owned());
-                        self.selected_entity_field = Some("$id".to_owned());
-                    }
+                let normalized = trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed);
+                if GtsID::is_valid(normalized) {
+                    self.gts_id = GtsID::new(normalized).ok();
+                    self.instance_id = Some(normalized.to_owned());
+                    self.selected_entity_field = Some("$id".to_owned());
                 }
             }
 
             // For schemas, schema_id is the $schema field value
             // OR for GTS schemas with chains, it's the parent type
-            if let Some(schema_val) = obj.get("$schema") {
-                if let Some(schema_str) = schema_val.as_str() {
-                    self.schema_id = Some(schema_str.to_owned());
-                    self.selected_schema_id_field = Some("$schema".to_owned());
-                }
+            if let Some(schema_val) = obj.get("$schema")
+                && let Some(schema_str) = schema_val.as_str()
+            {
+                self.schema_id = Some(schema_str.to_owned());
+                self.selected_schema_id_field = Some("$schema".to_owned());
             }
 
             // For chained GTS IDs, extract the parent schema from the chain
-            if let Some(ref gts_id) = self.gts_id {
-                if gts_id.gts_id_segments.len() > 1 {
-                    // Build parent schema ID from all segments except the last
-                    // Each segment.segment already includes the ~ suffix if it's a type
-                    let parent_segments: Vec<&str> = gts_id
-                        .gts_id_segments
-                        .iter()
-                        .take(gts_id.gts_id_segments.len() - 1)
-                        .map(|seg| seg.segment.as_str())
-                        .collect();
-                    if !parent_segments.is_empty() {
-                        // Join segments - they already have ~ at the end if they're types
-                        // The full chain format is: gts.seg1~seg2~seg3~
-                        // For parent, we want: gts.seg1~ (if only one parent segment)
-                        // or gts.seg1~seg2~ (if multiple parent segments)
-                        let parent_id = format!("gts.{}", parent_segments.join("~"));
-                        // Ensure it ends with ~ (parent is always a schema)
-                        let parent_id = if parent_id.ends_with('~') {
-                            parent_id
-                        } else {
-                            format!("{parent_id}~")
-                        };
-                        // Use parent as schema_id if $schema is a standard JSON Schema URL
-                        if self
-                            .schema_id
-                            .as_ref()
-                            .is_some_and(|s| s.starts_with("http"))
-                        {
-                            self.schema_id = Some(parent_id);
-                        }
+            if let Some(ref gts_id) = self.gts_id
+                && gts_id.gts_id_segments.len() > 1
+            {
+                // Build parent schema ID from all segments except the last
+                // Each segment.segment already includes the ~ suffix if it's a type
+                let parent_segments: Vec<&str> = gts_id
+                    .gts_id_segments
+                    .iter()
+                    .take(gts_id.gts_id_segments.len() - 1)
+                    .map(|seg| seg.segment.as_str())
+                    .collect();
+                if !parent_segments.is_empty() {
+                    // Join segments - they already have ~ at the end if they're types
+                    // The full chain format is: gts.seg1~seg2~seg3~
+                    // For parent, we want: gts.seg1~ (if only one parent segment)
+                    // or gts.seg1~seg2~ (if multiple parent segments)
+                    let parent_id = format!("gts.{}", parent_segments.join("~"));
+                    // Ensure it ends with ~ (parent is always a schema)
+                    let parent_id = if parent_id.ends_with('~') {
+                        parent_id
+                    } else {
+                        format!("{parent_id}~")
+                    };
+                    // Use parent as schema_id if $schema is a standard JSON Schema URL
+                    if self
+                        .schema_id
+                        .as_ref()
+                        .is_some_and(|s| s.starts_with("http"))
+                    {
+                        self.schema_id = Some(parent_id);
                     }
                 }
             }
@@ -293,11 +291,11 @@ impl GtsEntity {
         // Fallback to old logic for entity_id_fields if $id not found
         if self.gts_id.is_none() {
             let idv = self.calc_json_entity_id_legacy(cfg);
-            if let Some(ref id) = idv {
-                if GtsID::is_valid(id) {
-                    self.gts_id = GtsID::new(id).ok();
-                    self.instance_id = Some(id.clone());
-                }
+            if let Some(ref id) = idv
+                && GtsID::is_valid(id)
+            {
+                self.gts_id = GtsID::new(id).ok();
+                self.instance_id = Some(id.clone());
             }
         }
     }
@@ -360,13 +358,13 @@ impl GtsEntity {
         }
 
         // If still no instance_id, fall back to file path
-        if self.instance_id.is_none() {
-            if let Some(ref file) = self.file {
-                if let Some(seq) = self.list_sequence {
-                    self.instance_id = Some(format!("{}#{}", file.path, seq));
-                } else {
-                    self.instance_id = Some(file.path.clone());
-                }
+        if self.instance_id.is_none()
+            && let Some(ref file) = self.file
+        {
+            if let Some(seq) = self.list_sequence {
+                self.instance_id = Some(format!("{}#{}", file.path, seq));
+            } else {
+                self.instance_id = Some(file.path.clone());
             }
         }
     }
@@ -431,13 +429,13 @@ impl GtsEntity {
     ) -> Result<GtsEntityCastResult, SchemaCastError> {
         if self.is_schema {
             // When casting a schema, from_schema might be a standard JSON Schema (no gts_id)
-            if let (Some(self_id), Some(from_id)) = (&self.gts_id, &from_schema.gts_id) {
-                if self_id.id != from_id.id {
-                    return Err(SchemaCastError::InternalError(format!(
-                        "Internal error: {} != {}",
-                        self_id.id, from_id.id
-                    )));
-                }
+            if let (Some(self_id), Some(from_id)) = (&self.gts_id, &from_schema.gts_id)
+                && self_id.id != from_id.id
+            {
+                return Err(SchemaCastError::InternalError(format!(
+                    "Internal error: {} != {}",
+                    self_id.id, from_id.id
+                )));
             }
         }
 
@@ -527,17 +525,17 @@ impl GtsEntity {
         let mut found = Vec::new();
 
         let gts_id_matcher = |node: &Value, path: &str| -> Option<GtsRef> {
-            if let Some(s) = node.as_str() {
-                if GtsID::is_valid(s) {
-                    return Some(GtsRef {
-                        id: s.to_owned(),
-                        source_path: if path.is_empty() {
-                            "root".to_owned()
-                        } else {
-                            path.to_owned()
-                        },
-                    });
-                }
+            if let Some(s) = node.as_str()
+                && GtsID::is_valid(s)
+            {
+                return Some(GtsRef {
+                    id: s.to_owned(),
+                    source_path: if path.is_empty() {
+                        "root".to_owned()
+                    } else {
+                        path.to_owned()
+                    },
+                });
             }
             None
         };
@@ -550,25 +548,24 @@ impl GtsEntity {
         let mut refs = Vec::new();
 
         let ref_matcher = |node: &Value, path: &str| -> Option<GtsRef> {
-            if let Some(obj) = node.as_object() {
-                if let Some(ref_val) = obj.get("$ref") {
-                    if let Some(ref_str) = ref_val.as_str() {
-                        let ref_path = if path.is_empty() {
-                            "$ref".to_owned()
-                        } else {
-                            format!("{path}.$ref")
-                        };
-                        // Normalize: strip gts:// prefix for canonical GTS ID storage
-                        let normalized_ref = ref_str
-                            .strip_prefix(GTS_URI_PREFIX)
-                            .unwrap_or(ref_str)
-                            .to_owned();
-                        return Some(GtsRef {
-                            id: normalized_ref,
-                            source_path: ref_path,
-                        });
-                    }
-                }
+            if let Some(obj) = node.as_object()
+                && let Some(ref_val) = obj.get("$ref")
+                && let Some(ref_str) = ref_val.as_str()
+            {
+                let ref_path = if path.is_empty() {
+                    "$ref".to_owned()
+                } else {
+                    format!("{path}.$ref")
+                };
+                // Normalize: strip gts:// prefix for canonical GTS ID storage
+                let normalized_ref = ref_str
+                    .strip_prefix(GTS_URI_PREFIX)
+                    .unwrap_or(ref_str)
+                    .to_owned();
+                return Some(GtsRef {
+                    id: normalized_ref,
+                    source_path: ref_path,
+                });
             }
             None
         };
@@ -578,28 +575,27 @@ impl GtsEntity {
     }
 
     fn get_field_value(&self, field: &str) -> Option<String> {
-        if let Some(obj) = self.content.as_object() {
-            if let Some(v) = obj.get(field) {
-                if let Some(s) = v.as_str() {
-                    let trimmed = s.trim();
-                    if !trimmed.is_empty() {
-                        // For schema $id fields, validate that they use gts:// URI format, not plain gts. prefix
-                        // According to spec: "Do not place the canonical gts. string directly in $id"
-                        if field == "$id" && self.is_schema && trimmed.starts_with("gts.") {
-                            // Invalid: schema $id must use gts:// URI format
-                            return None;
-                        }
-
-                        // Strip the "gts://" URI prefix ONLY for $id field (JSON Schema compatibility)
-                        // The gts:// prefix is ONLY valid in the $id field of JSON Schema
-                        let normalized = if field == "$id" {
-                            trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed)
-                        } else {
-                            trimmed
-                        };
-                        return Some(normalized.to_owned());
-                    }
+        if let Some(obj) = self.content.as_object()
+            && let Some(v) = obj.get(field)
+            && let Some(s) = v.as_str()
+        {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                // For schema $id fields, validate that they use gts:// URI format, not plain gts. prefix
+                // According to spec: "Do not place the canonical gts. string directly in $id"
+                if field == "$id" && self.is_schema && trimmed.starts_with("gts.") {
+                    // Invalid: schema $id must use gts:// URI format
+                    return None;
                 }
+
+                // Strip the "gts://" URI prefix ONLY for $id field (JSON Schema compatibility)
+                // The gts:// prefix is ONLY valid in the $id field of JSON Schema
+                let normalized = if field == "$id" {
+                    trimmed.strip_prefix(GTS_URI_PREFIX).unwrap_or(trimmed)
+                } else {
+                    trimmed
+                };
+                return Some(normalized.to_owned());
             }
         }
         None
@@ -608,11 +604,11 @@ impl GtsEntity {
     fn first_non_empty_field(&mut self, fields: &[String]) -> Option<String> {
         // First pass: look for valid GTS IDs
         for f in fields {
-            if let Some(v) = self.get_field_value(f) {
-                if GtsID::is_valid(&v) {
-                    self.selected_entity_field = Some(f.clone());
-                    return Some(v);
-                }
+            if let Some(v) = self.get_field_value(f)
+                && GtsID::is_valid(&v)
+            {
+                self.selected_entity_field = Some(f.clone());
+                return Some(v);
             }
         }
 

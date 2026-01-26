@@ -95,32 +95,22 @@ impl LoggingMiddleware {
             };
 
             // Log request body at DEBUG level
-            if let Some(ref bytes) = body_bytes {
-                if !bytes.is_empty() {
-                    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S,%3f");
-                    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
-                        let body_str = serde_json::to_string_pretty(&json).unwrap_or_default();
-                        eprintln!(
-                            "{} - DEBUG - {}Request body:{}\n{}{}{}",
-                            timestamp,
-                            colors.dim,
-                            colors.reset,
-                            colors.gray,
-                            body_str,
-                            colors.reset
-                        );
-                    } else {
-                        let body_str = String::from_utf8_lossy(bytes);
-                        eprintln!(
-                            "{} - DEBUG - {}Request body (raw):{}\n{}{}{}",
-                            timestamp,
-                            colors.dim,
-                            colors.reset,
-                            colors.gray,
-                            body_str,
-                            colors.reset
-                        );
-                    }
+            if let Some(ref bytes) = body_bytes
+                && !bytes.is_empty()
+            {
+                let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S,%3f");
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
+                    let body_str = serde_json::to_string_pretty(&json).unwrap_or_default();
+                    eprintln!(
+                        "{} - DEBUG - {}Request body:{}\n{}{}{}",
+                        timestamp, colors.dim, colors.reset, colors.gray, body_str, colors.reset
+                    );
+                } else {
+                    let body_str = String::from_utf8_lossy(bytes);
+                    eprintln!(
+                        "{} - DEBUG - {}Request body (raw):{}\n{}{}{}",
+                        timestamp, colors.dim, colors.reset, colors.gray, body_str, colors.reset
+                    );
                 }
             }
 

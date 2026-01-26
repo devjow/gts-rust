@@ -416,10 +416,10 @@ impl GtsID {
                 if p_seg.ver_major != 0 && p_seg.ver_major != c_seg.ver_major {
                     return false;
                 }
-                if let Some(p_minor) = p_seg.ver_minor {
-                    if Some(p_minor) != c_seg.ver_minor {
-                        return false;
-                    }
+                if let Some(p_minor) = p_seg.ver_minor
+                    && Some(p_minor) != c_seg.ver_minor
+                {
+                    return false;
                 }
                 if p_seg.is_type && p_seg.is_type != c_seg.is_type {
                     return false;
@@ -448,10 +448,10 @@ impl GtsID {
             }
 
             // Minor version: if pattern has no minor version, accept any minor in candidate
-            if let Some(p_minor) = p_seg.ver_minor {
-                if Some(p_minor) != c_seg.ver_minor {
-                    return false;
-                }
+            if let Some(p_minor) = p_seg.ver_minor
+                && Some(p_minor) != c_seg.ver_minor
+            {
+                return false;
             }
 
             // Check is_type flag matches
@@ -476,13 +476,13 @@ impl GtsID {
         let gts = parts[0].to_owned();
         let path = parts.get(1).map(|s| (*s).to_owned());
 
-        if let Some(ref p) = path {
-            if p.is_empty() {
-                return Err(GtsError::InvalidId {
-                    id: gts_with_path.to_owned(),
-                    cause: "Attribute path cannot be empty".to_owned(),
-                });
-            }
+        if let Some(ref p) = path
+            && p.is_empty()
+        {
+            return Err(GtsError::InvalidId {
+                id: gts_with_path.to_owned(),
+                cause: "Attribute path cannot be empty".to_owned(),
+            });
         }
 
         Ok((gts, path))
@@ -661,7 +661,7 @@ impl schemars::JsonSchema for GtsInstanceId {
         "GtsInstanceId".to_owned()
     }
 
-    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         // Build schema from the shared JSON representation
         let json = Self::json_schema_value();
         let schema_obj = schemars::schema::SchemaObject {
@@ -828,7 +828,7 @@ impl schemars::JsonSchema for GtsSchemaId {
         "GtsSchemaId".to_owned()
     }
 
-    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         // Build schema from the shared JSON representation
         let json = Self::json_schema_value();
         let schema_obj = schemars::schema::SchemaObject {

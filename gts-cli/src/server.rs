@@ -1,14 +1,14 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use gts::GtsOps;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 use crate::logging::LoggingMiddleware;

@@ -14,7 +14,7 @@ pub use files_reader::GtsFileReader;
 pub use gts::{GtsError, GtsID, GtsIdSegment, GtsInstanceId, GtsSchemaId, GtsWildcard};
 pub use ops::GtsOps;
 pub use path_resolver::JsonPathResolver;
-pub use schema::{strip_schema_metadata, GtsSchema};
+pub use schema::{GtsSchema, strip_schema_metadata};
 pub use schema_cast::{GtsEntityCastResult, SchemaCastError};
 pub use store::{GtsReader, GtsStore, GtsStoreQueryResult, StoreError};
 pub use x_gts_ref::{XGtsRefValidationError, XGtsRefValidator};
