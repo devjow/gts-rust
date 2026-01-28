@@ -178,6 +178,26 @@ impl GtsStore {
         match schema {
             Value::Object(map) => {
                 if let Some(Value::String(ref_uri)) = map.get("$ref") {
+                    // Handle internal JSON Schema references like #/$defs/GtsInstanceId
+                    // These should be inlined to match schemars 0.8 behavior (is_referenceable=false)
+                    match ref_uri.as_str() {
+                        "#/$defs/GtsInstanceId" => {
+                            return crate::GtsInstanceId::json_schema_value();
+                        }
+                        "#/$defs/GtsSchemaId" => {
+                            return crate::GtsSchemaId::json_schema_value();
+                        }
+                        s if s.starts_with("#/") => {
+                            // Other internal references - keep as-is
+                            let mut new_map = serde_json::Map::new();
+                            for (k, v) in map {
+                                new_map.insert(k.clone(), self.resolve_schema_refs(v));
+                            }
+                            return Value::Object(new_map);
+                        }
+                        _ => {} // Fall through to external ref handling
+                    }
+
                     // Normalize the ref: strip gts:// prefix to get canonical GTS ID
                     let canonical_ref = ref_uri.strip_prefix(GTS_URI_PREFIX).unwrap_or(ref_uri);
 
@@ -189,6 +209,7 @@ impl GtsStore {
                         let mut resolved = self.resolve_schema_refs(&entity.content);
 
                         // Remove $id and $schema from resolved content to avoid URL resolution issues
+                        // Note: $defs for GtsInstanceId/GtsSchemaId are inlined during resolution (see match above)
                         if let Value::Object(ref mut resolved_map) = resolved {
                             resolved_map.remove("$id");
                             resolved_map.remove("$schema");
@@ -235,11 +256,11 @@ impl GtsStore {
 
                         match resolved_item {
                             Value::Object(ref item_map) => {
-                                // If this is a resolved schema (no $ref), merge its properties
+                                // If this item still has a $ref, keep it in allOf
                                 if item_map.contains_key("$ref") {
-                                    // Keep items that still have $ref (couldn't be resolved)
                                     resolved_all_of.push(resolved_item);
                                 } else {
+                                    // Merge properties and required fields from resolved items
                                     if let Some(Value::Object(props_map)) =
                                         item_map.get("properties")
                                     {
@@ -484,7 +505,7 @@ impl GtsStore {
         }
 
         // For now, we'll do a basic validation by trying to compile the schema
-        jsonschema::JSONSchema::compile(&schema_for_validation).map_err(|e| {
+        jsonschema::validator_for(&schema_for_validation).map_err(|e| {
             StoreError::ValidationError(format!(
                 "JSON Schema validation failed for '{gts_id}': {e}"
             ))
@@ -538,13 +559,16 @@ impl GtsStore {
             serde_json::to_string_pretty(&resolved_schema).unwrap_or_default()
         );
 
-        let compiled = jsonschema::JSONSchema::compile(&resolved_schema).map_err(|e| {
+        let validator = jsonschema::validator_for(&resolved_schema).map_err(|e| {
             tracing::error!("Schema compilation error: {}", e);
             StoreError::ValidationError(format!("Invalid schema: {e}"))
         })?;
 
-        compiled.validate(&obj.content).map_err(|e| {
-            let errors: Vec<String> = e.map(|err| err.to_string()).collect();
+        validator.validate(&obj.content).map_err(|_| {
+            let errors: Vec<String> = validator
+                .iter_errors(&obj.content)
+                .map(|err| err.to_string())
+                .collect();
             StoreError::ValidationError(format!("Validation failed: {}", errors.join(", ")))
         })?;
 

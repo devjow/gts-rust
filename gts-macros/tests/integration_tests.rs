@@ -11,7 +11,6 @@ mod inheritance_tests;
 
 use gts::{GtsConfig, GtsEntity, GtsID, GtsInstanceId, GtsSchema};
 use gts_macros::struct_to_gts_schema;
-use jsonschema::JSONSchema;
 /// Event Topic (Stream) definition for testing GTS schema generation.
 /// Inspired by examples/examples/events/schemas/gts.x.core.events.topic.v1~.schema.json
 #[derive(Debug, Clone)]
@@ -313,12 +312,12 @@ fn test_event_topic_instance_validates_against_schema() {
     let schema: serde_json::Value =
         serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
 
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     // Validate the instance against the schema
-    let validation_result = compiled.validate(&instance_json);
-    if let Err(errors) = validation_result {
-        for error in errors {
+    let validation_result = validator.validate(&instance_json);
+    if validation_result.is_err() {
+        for error in validator.iter_errors(&instance_json) {
             println!("Validation error: {}", error);
         }
         panic!("EventTopicV1 instance should validate against EventTopicV1 schema");
@@ -342,11 +341,11 @@ fn test_product_instance_validates_against_schema() {
     let schema: serde_json::Value =
         serde_json::from_str(&ProductV1::gts_schema_with_refs_as_string()).unwrap();
 
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
-    let validation_result = compiled.validate(&instance_json);
-    if let Err(errors) = validation_result {
-        for error in errors {
+    let validation_result = validator.validate(&instance_json);
+    if validation_result.is_err() {
+        for error in validator.iter_errors(&instance_json) {
             println!("Validation error: {}", error);
         }
         panic!("Product instance should validate against Product schema");
@@ -372,10 +371,10 @@ fn test_product_instance_with_absent_optional_field_validates() {
     let schema: serde_json::Value =
         serde_json::from_str(&ProductV1::gts_schema_with_refs_as_string()).unwrap();
 
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     assert!(
-        compiled.is_valid(&instance_without_description),
+        validator.is_valid(&instance_without_description),
         "Product instance with absent optional field should validate"
     );
 }
@@ -395,10 +394,10 @@ fn test_optional_field_as_null_fails_validation() {
 
     let schema: serde_json::Value =
         serde_json::from_str(&ProductV1::gts_schema_with_refs_as_string()).unwrap();
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     assert!(
-        !compiled.is_valid(&instance_with_null),
+        !validator.is_valid(&instance_with_null),
         "Instance with null for string field should fail validation"
     );
 }
@@ -414,15 +413,15 @@ fn test_invalid_instance_missing_required_field() {
 
     let schema: serde_json::Value =
         serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     assert!(
-        !compiled.is_valid(&invalid_instance),
+        !validator.is_valid(&invalid_instance),
         "Instance missing required fields should fail validation"
     );
 
     // Verify the specific validation errors
-    let result = compiled.validate(&invalid_instance);
+    let result = validator.validate(&invalid_instance);
     assert!(result.is_err(), "Validation should return errors");
 }
 
@@ -438,10 +437,10 @@ fn test_invalid_instance_wrong_type() {
 
     let schema: serde_json::Value =
         serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     assert!(
-        !compiled.is_valid(&invalid_instance),
+        !validator.is_valid(&invalid_instance),
         "Instance with wrong type should fail validation"
     );
 }
@@ -461,10 +460,10 @@ fn test_instance_with_extra_fields_rejected() {
 
     let schema: serde_json::Value =
         serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     assert!(
-        !compiled.is_valid(&instance_with_extras),
+        !validator.is_valid(&instance_with_extras),
         "Instance with extra fields should be rejected (additionalProperties is false)"
     );
 }
@@ -569,12 +568,12 @@ fn test_multiple_instances_validate_independently() {
     let schema: serde_json::Value =
         serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
 
-    let compiled = JSONSchema::compile(&schema).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
 
     for (i, topic) in topics.iter().enumerate() {
         let instance_json = serde_json::to_value(topic).unwrap();
         assert!(
-            compiled.is_valid(&instance_json),
+            validator.is_valid(&instance_json),
             "EventTopicV1 {} should validate against schema",
             i + 1
         );

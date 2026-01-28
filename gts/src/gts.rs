@@ -657,41 +657,34 @@ impl<'de> serde::Deserialize<'de> for GtsInstanceId {
 }
 
 impl schemars::JsonSchema for GtsInstanceId {
-    fn schema_name() -> String {
-        "GtsInstanceId".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "GtsInstanceId".into()
     }
 
-    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        // Build schema from the shared JSON representation
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Build inline schema to prevent $defs reference generation
+        // This matches the old schemars 0.8 behavior where is_referenceable() returned false
+        // We create the schema as JSON and convert it to avoid using private schema module
         let json = Self::json_schema_value();
-        let schema_obj = schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            format: json
-                .get("format")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            metadata: Some(Box::new(schemars::schema::Metadata {
-                title: json.get("title").and_then(|v| v.as_str()).map(String::from),
-                description: json
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .map(String::from),
-                ..Default::default()
-            })),
-            extensions: {
-                let mut ext = schemars::Map::new();
-                if let Some(gts_ref) = json.get("x-gts-ref") {
-                    ext.insert("x-gts-ref".to_owned(), gts_ref.clone());
-                }
-                ext
-            },
-            ..Default::default()
-        };
-        schema_obj.into()
-    }
+        let mut schema_json = serde_json::json!({
+            "type": "string"
+        });
 
-    fn is_referenceable() -> bool {
-        false
+        if let Some(format) = json.get("format") {
+            schema_json["format"] = format.clone();
+        }
+        if let Some(title) = json.get("title") {
+            schema_json["title"] = title.clone();
+        }
+        if let Some(description) = json.get("description") {
+            schema_json["description"] = description.clone();
+        }
+        if let Some(gts_ref) = json.get("x-gts-ref") {
+            schema_json["x-gts-ref"] = gts_ref.clone();
+        }
+
+        // Convert JSON to Schema using TryFrom
+        schema_json.try_into().unwrap_or_default()
     }
 }
 
@@ -824,41 +817,34 @@ impl<'de> serde::Deserialize<'de> for GtsSchemaId {
 }
 
 impl schemars::JsonSchema for GtsSchemaId {
-    fn schema_name() -> String {
-        "GtsSchemaId".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "GtsSchemaId".into()
     }
 
-    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        // Build schema from the shared JSON representation
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Build inline schema to prevent $defs reference generation
+        // This matches the old schemars 0.8 behavior where is_referenceable() returned false
+        // We create the schema as JSON and convert it to avoid using private schema module
         let json = Self::json_schema_value();
-        let schema_obj = schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            format: json
-                .get("format")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            metadata: Some(Box::new(schemars::schema::Metadata {
-                title: json.get("title").and_then(|v| v.as_str()).map(String::from),
-                description: json
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .map(String::from),
-                ..Default::default()
-            })),
-            extensions: {
-                let mut ext = schemars::Map::new();
-                if let Some(gts_ref) = json.get("x-gts-ref") {
-                    ext.insert("x-gts-ref".to_owned(), gts_ref.clone());
-                }
-                ext
-            },
-            ..Default::default()
-        };
-        schema_obj.into()
-    }
+        let mut schema_json = serde_json::json!({
+            "type": "string"
+        });
 
-    fn is_referenceable() -> bool {
-        false
+        if let Some(format) = json.get("format") {
+            schema_json["format"] = format.clone();
+        }
+        if let Some(title) = json.get("title") {
+            schema_json["title"] = title.clone();
+        }
+        if let Some(description) = json.get("description") {
+            schema_json["description"] = description.clone();
+        }
+        if let Some(gts_ref) = json.get("x-gts-ref") {
+            schema_json["x-gts-ref"] = gts_ref.clone();
+        }
+
+        // Convert JSON to Schema using TryFrom
+        schema_json.try_into().unwrap_or_default()
     }
 }
 

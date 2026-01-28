@@ -1052,8 +1052,23 @@ pub fn struct_to_gts_schema(attr: TokenStream, item: TokenStream) -> TokenStream
                 // Get this type's schemars schema (RootSchema serializes at root level)
                 let root_schema = schemars::schema_for!(Self);
                 let schema_val = serde_json::to_value(&root_schema).expect("schemars");
-                let properties = schema_val.get("properties").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let mut properties = schema_val.get("properties").cloned().unwrap_or_else(|| serde_json::json!({}));
                 let required = schema_val.get("required").cloned().unwrap_or_else(|| serde_json::json!([]));
+
+                // Resolve internal $ref references to GtsInstanceId and GtsSchemaId at compile time
+                // This is needed for schemas validated directly (not through GtsStore)
+                // Runtime resolution in GtsStore::resolve_schema_refs provides additional coverage
+                if let Some(props_obj) = properties.as_object_mut() {
+                    for (_key, value) in props_obj.iter_mut() {
+                        if let Some(ref_str) = value.get("$ref").and_then(|v| v.as_str()) {
+                            if ref_str == "#/$defs/GtsInstanceId" {
+                                *value = gts::GtsInstanceId::json_schema_value();
+                            } else if ref_str == "#/$defs/GtsSchemaId" {
+                                *value = gts::GtsSchemaId::json_schema_value();
+                            }
+                        }
+                    }
+                }
 
                 // If no parent (base type), return simple schema without allOf
                 // Non-generic base types have additionalProperties: false at root level
