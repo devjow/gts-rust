@@ -209,7 +209,7 @@ pub struct ContainerV1<T> {
 #[struct_to_gts_schema(
     dir_path = "schemas",
     base = ContainerV1,
-    schema_id = "gts.x.core.events.container.v1~x.app.content.v1~",
+    schema_id = "gts.x.core.events.container.v1~x.app.entities.content.v1~",
     description = "Content extending container",
     properties = "content_value"
 )]

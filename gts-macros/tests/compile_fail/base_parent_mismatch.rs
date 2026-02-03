@@ -19,11 +19,11 @@ pub struct BaseEventV1<P> {
 
 // This should fail: parent schema_id doesn't match the parent segment
 // Parent's ID is "gts.x.core.events.type.v1~" but schema_id's parent
-// segment is "gts.x.wrong.parent.v1~"
+// segment is "gts.x.wrong.parent.type.v1~"
 #[struct_to_gts_schema(
     dir_path = "schemas",
     base = BaseEventV1,
-    schema_id = "gts.x.wrong.parent.v1~x.core.audit.event.v1~",
+    schema_id = "gts.x.wrong.parent.type.v1~x.core.audit.event.v1~",
     description = "This should fail",
     properties = "user_id"
 )]

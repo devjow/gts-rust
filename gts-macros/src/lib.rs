@@ -14,6 +14,180 @@ const ID_FIELD_NAMES: &[&str] = &["$id", "id", "gts_id", "gtsId"];
 const TYPE_FIELD_NAMES: &[&str] = &["type", "r#type", "gts_type", "gtsType", "schema"];
 const SERDE_TYPE_RENAMES: &[&str] = &["type", "gts_type", "gtsType", "schema"];
 
+// GTS ID validation constants (mirrored from gts/src/gts.rs)
+const GTS_PREFIX: &str = "gts.";
+const GTS_MAX_LENGTH: usize = 1024;
+
+/// Validates a GTS segment token without regex for better performance.
+/// Valid tokens: start with [a-z_], followed by [a-z0-9_]*
+/// (Mirrored from gts/src/gts.rs)
+#[inline]
+fn is_valid_segment_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let mut chars = token.chars();
+    // First character must be [a-z_]
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() || c == '_' => {}
+        _ => return false,
+    }
+    // Remaining characters must be [a-z0-9_]
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Validates a single GTS segment (the part between ~ markers).
+/// Returns Ok(()) if valid, Err(message) if invalid.
+fn validate_gts_segment(segment_num: usize, segment: &str) -> Result<(), String> {
+    let mut segment = segment.to_owned();
+
+    // Check for type marker (~)
+    if segment.contains('~') {
+        let tilde_count = segment.matches('~').count();
+        if tilde_count > 1 {
+            return Err(format!("Segment #{segment_num}: Too many '~' characters"));
+        }
+        if segment.ends_with('~') {
+            segment.pop();
+        } else {
+            return Err(format!("Segment #{segment_num}: '~' must be at the end"));
+        }
+    }
+
+    let tokens: Vec<&str> = segment.split('.').collect();
+
+    if tokens.len() > 6 {
+        return Err(format!(
+            "Segment #{segment_num}: Too many tokens (got {}, max 6). \
+             Expected format: vendor.package.namespace.type.vMAJOR[.MINOR]",
+            tokens.len()
+        ));
+    }
+
+    if tokens.len() < 5 {
+        return Err(format!(
+            "Segment #{segment_num}: Too few tokens (got {}, min 5). \
+             Expected format: vendor.package.namespace.type.vMAJOR[.MINOR]",
+            tokens.len()
+        ));
+    }
+
+    // Validate first 4 tokens (vendor, package, namespace, type)
+    for (i, token) in tokens.iter().take(4).enumerate() {
+        if !is_valid_segment_token(token) {
+            let token_name = match i {
+                0 => "vendor",
+                1 => "package",
+                2 => "namespace",
+                3 => "type",
+                _ => "token",
+            };
+            return Err(format!(
+                "Segment #{segment_num}: Invalid {token_name} token '{token}'. \
+                 Must start with [a-z_] and contain only [a-z0-9_]"
+            ));
+        }
+    }
+
+    // Validate version token (index 4)
+    let version_token = tokens[4];
+    if !version_token.starts_with('v') {
+        return Err(format!(
+            "Segment #{segment_num}: Version must start with 'v', got '{version_token}'. \
+             Expected format: vendor.package.namespace.type.vMAJOR[.MINOR]"
+        ));
+    }
+
+    let major_str = &version_token[1..];
+    if major_str.parse::<u32>().is_err() {
+        return Err(format!(
+            "Segment #{segment_num}: Major version must be an integer, got '{major_str}'"
+        ));
+    }
+
+    // Validate optional minor version (index 5)
+    if tokens.len() > 5 {
+        let minor_str = tokens[5];
+        if minor_str.parse::<u32>().is_err() {
+            return Err(format!(
+                "Segment #{segment_num}: Minor version must be an integer, got '{minor_str}'"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates a GTS schema ID at compile time.
+/// Returns Ok(()) if valid, Err(message) if invalid.
+/// (Logic mirrored from gts/src/gts.rs `GtsID::new` and `GtsIdSegment::parse_segment_id`)
+fn validate_gts_schema_id(schema_id: &str) -> Result<(), String> {
+    let raw = schema_id.trim();
+
+    // Must start with "gts."
+    if !raw.starts_with(GTS_PREFIX) {
+        return Err(format!(
+            "Invalid GTS schema ID: must start with '{GTS_PREFIX}', got '{raw}'"
+        ));
+    }
+
+    // Must be lowercase
+    if raw != raw.to_lowercase() {
+        return Err(format!(
+            "Invalid GTS schema ID: must be lowercase, got '{raw}'"
+        ));
+    }
+
+    // Must not contain hyphens
+    if raw.contains('-') {
+        return Err(format!(
+            "Invalid GTS schema ID: must not contain '-', got '{raw}'"
+        ));
+    }
+
+    // Length check
+    if raw.len() > GTS_MAX_LENGTH {
+        return Err(format!(
+            "Invalid GTS schema ID: too long ({} chars, max {GTS_MAX_LENGTH})",
+            raw.len()
+        ));
+    }
+
+    // Schema ID must end with ~ (type marker)
+    if !raw.ends_with('~') {
+        return Err(format!(
+            "Invalid GTS schema ID: must end with '~' (type marker), got '{raw}'"
+        ));
+    }
+
+    // Parse segments (split by ~)
+    let remainder = &raw[GTS_PREFIX.len()..];
+    let tilde_parts: Vec<&str> = remainder.split('~').collect();
+
+    // Build segments (each part before ~ plus the ~)
+    let mut segments = Vec::new();
+    for i in 0..tilde_parts.len() {
+        if i < tilde_parts.len() - 1 {
+            segments.push(format!("{}~", tilde_parts[i]));
+            // If last non-empty part followed by empty string (trailing ~)
+            if i == tilde_parts.len() - 2 && tilde_parts[i + 1].is_empty() {
+                break;
+            }
+        }
+    }
+
+    if segments.is_empty() {
+        return Err("Invalid GTS schema ID: no segments found".to_owned());
+    }
+
+    // Validate each segment
+    for (i, segment) in segments.iter().enumerate() {
+        validate_gts_segment(i + 1, segment)?;
+    }
+
+    Ok(())
+}
+
 /// Represents a parsed version (major and optional minor)
 #[derive(Debug, PartialEq)]
 struct Version {
@@ -459,7 +633,15 @@ impl Parse for GtsSchemaArgs {
                 }
                 "schema_id" => {
                     let value: LitStr = input.parse()?;
-                    schema_id = Some(value.value());
+                    let id = value.value();
+                    // Validate GTS schema ID format at compile time
+                    if let Err(msg) = validate_gts_schema_id(&id) {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            format!("struct_to_gts_schema: {msg}"),
+                        ));
+                    }
+                    schema_id = Some(id);
                 }
                 "description" => {
                     let value: LitStr = input.parse()?;

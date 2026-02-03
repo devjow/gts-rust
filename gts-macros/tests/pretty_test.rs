@@ -4,7 +4,7 @@ mod tests {
 
     #[struct_to_gts_schema(
         dir_path = "test_schemas",
-        schema_id = "gts.test.pretty.v1~",
+        schema_id = "gts.x.test.entities.pretty.v1~",
         description = "Test schema for pretty formatting",
         properties = "id,name,value",
         base = true
