@@ -4,28 +4,11 @@ use std::sync::LazyLock;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const GTS_PREFIX: &str = "gts.";
+pub const GTS_PREFIX: &str = gts_id::GTS_PREFIX;
 /// URI-compatible prefix for GTS identifiers in JSON Schema `$id` field (e.g., `gts://gts.x.y.z...`).
 /// This is ONLY used for JSON Schema serialization/deserialization, not for GTS ID parsing.
 pub const GTS_URI_PREFIX: &str = "gts://";
 static GTS_NS: LazyLock<Uuid> = LazyLock::new(|| Uuid::new_v5(&Uuid::NAMESPACE_URL, b"gts"));
-
-/// Validates a GTS segment token without regex for better performance.
-/// Valid tokens: start with [a-z_], followed by [a-z0-9_]*
-#[inline]
-fn is_valid_segment_token(token: &str) -> bool {
-    if token.is_empty() {
-        return false;
-    }
-    let mut chars = token.chars();
-    // First character must be [a-z_]
-    match chars.next() {
-        Some(c) if c.is_ascii_lowercase() || c == '_' => {}
-        _ => return false,
-    }
-    // Remaining characters must be [a-z0-9_]
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-}
 
 #[derive(Debug, Error)]
 pub enum GtsError {
@@ -85,172 +68,24 @@ impl GtsIdSegment {
         Ok(seg)
     }
 
-    #[allow(clippy::too_many_lines)]
     fn parse_segment_id(&mut self, segment: &str) -> Result<(), GtsError> {
-        let mut segment = segment.to_owned();
-
-        // Check for type marker
-        if segment.contains('~') {
-            let tilde_count = segment.matches('~').count();
-            if tilde_count > 1 {
-                return Err(GtsError::Segment {
+        let parsed =
+            gts_id::validate_segment(self.num, segment, true).map_err(|cause| {
+                GtsError::Segment {
                     num: self.num,
                     offset: self.offset,
                     segment: self.segment.clone(),
-                    cause: "Too many '~' characters".to_owned(),
-                });
-            }
-            if segment.ends_with('~') {
-                self.is_type = true;
-                segment.pop();
-            } else {
-                return Err(GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause: " '~' must be at the end".to_owned(),
-                });
-            }
-        }
-
-        let tokens: Vec<&str> = segment.split('.').collect();
-
-        if tokens.len() > 6 {
-            return Err(GtsError::Segment {
-                num: self.num,
-                offset: self.offset,
-                segment: self.segment.clone(),
-                cause: "Too many tokens".to_owned(),
-            });
-        }
-
-        if !segment.ends_with('*') && tokens.len() < 5 {
-            return Err(GtsError::Segment {
-                num: self.num,
-                offset: self.offset,
-                segment: self.segment.clone(),
-                cause: "Too few tokens".to_owned(),
-            });
-        }
-
-        // Detect extra name token before version (e.g., vendor.package.namespace.type.extra.v1)
-        if !segment.ends_with('*') && tokens.len() == 6 {
-            let has_wildcard = tokens.contains(&"*");
-            if !has_wildcard && !tokens[4].starts_with('v') && tokens[5].starts_with('v') {
-                return Err(GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause: "Too many name tokens before version".to_owned(),
-                });
-            }
-        }
-
-        // Validate tokens (except version tokens)
-        if !segment.ends_with('*') {
-            for (i, token) in tokens.iter().take(4).enumerate() {
-                if !is_valid_segment_token(token) {
-                    return Err(GtsError::Segment {
-                        num: self.num,
-                        offset: self.offset,
-                        segment: self.segment.clone(),
-                        cause: format!("Invalid segment token: {}", tokens[i]),
-                    });
+                    cause,
                 }
-            }
-        }
-
-        // Parse tokens
-        if !tokens.is_empty() {
-            if tokens[0] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-            tokens[0].clone_into(&mut self.vendor);
-        }
-
-        if tokens.len() > 1 {
-            if tokens[1] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-            tokens[1].clone_into(&mut self.package);
-        }
-
-        if tokens.len() > 2 {
-            if tokens[2] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-            tokens[2].clone_into(&mut self.namespace);
-        }
-
-        if tokens.len() > 3 {
-            if tokens[3] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-            tokens[3].clone_into(&mut self.type_name);
-        }
-
-        if tokens.len() > 4 {
-            if tokens[4] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-
-            if !tokens[4].starts_with('v') {
-                return Err(GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause: "Major version must start with 'v'".to_owned(),
-                });
-            }
-
-            let major_str = &tokens[4][1..];
-            self.ver_major = major_str.parse().map_err(|_| GtsError::Segment {
-                num: self.num,
-                offset: self.offset,
-                segment: self.segment.clone(),
-                cause: "Major version must be an integer".to_owned(),
             })?;
-
-            if major_str != self.ver_major.to_string() {
-                return Err(GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause: "Major version must be an integer".to_owned(),
-                });
-            }
-        }
-
-        if tokens.len() > 5 {
-            if tokens[5] == "*" {
-                self.is_wildcard = true;
-                return Ok(());
-            }
-
-            let minor: u32 = tokens[5].parse().map_err(|_| GtsError::Segment {
-                num: self.num,
-                offset: self.offset,
-                segment: self.segment.clone(),
-                cause: "Minor version must be an integer".to_owned(),
-            })?;
-
-            if tokens[5] != minor.to_string() {
-                return Err(GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause: "Minor version must be an integer".to_owned(),
-                });
-            }
-
-            self.ver_minor = Some(minor);
-        }
-
+        self.vendor = parsed.vendor;
+        self.package = parsed.package;
+        self.namespace = parsed.namespace;
+        self.type_name = parsed.type_name;
+        self.ver_major = parsed.ver_major;
+        self.ver_minor = parsed.ver_minor;
+        self.is_type = parsed.is_type;
+        self.is_wildcard = parsed.is_wildcard;
         Ok(())
     }
 }
@@ -273,69 +108,46 @@ impl GtsID {
     pub fn new(id: &str) -> Result<Self, GtsError> {
         let raw = id.trim();
 
-        // Validate lowercase
-        if raw != raw.to_lowercase() {
-            return Err(GtsError::Id {
+        // Delegate all validation to the shared gts-id crate (single source of truth).
+        let parsed_segments = gts_id::validate_gts_id(raw, true).map_err(|e| match e {
+            gts_id::GtsIdError::Id { cause, .. } => GtsError::Id {
                 id: id.to_owned(),
-                cause: "Must be lower case".to_owned(),
-            });
-        }
+                cause,
+            },
+            gts_id::GtsIdError::Segment {
+                num,
+                offset,
+                segment,
+                cause,
+            } => GtsError::Segment {
+                num,
+                offset,
+                segment,
+                cause,
+            },
+        })?;
 
-        if raw.contains('-') {
-            return Err(GtsError::Id {
-                id: id.to_owned(),
-                cause: "Must not contain '-'".to_owned(),
-            });
-        }
+        // Convert ParsedSegment → GtsIdSegment
+        let gts_id_segments: Vec<GtsIdSegment> = parsed_segments
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| GtsIdSegment {
+                num: i + 1,
+                offset: p.offset,
+                segment: p.raw,
+                vendor: p.vendor,
+                package: p.package,
+                namespace: p.namespace,
+                type_name: p.type_name,
+                ver_major: p.ver_major,
+                ver_minor: p.ver_minor,
+                is_type: p.is_type,
+                is_wildcard: p.is_wildcard,
+            })
+            .collect();
 
-        if !raw.starts_with(GTS_PREFIX) {
-            return Err(GtsError::Id {
-                id: id.to_owned(),
-                cause: format!("Does not start with '{GTS_PREFIX}'"),
-            });
-        }
-
-        if raw.len() > 1024 {
-            return Err(GtsError::Id {
-                id: id.to_owned(),
-                cause: "Too long".to_owned(),
-            });
-        }
-
-        let mut gts_id_segments = Vec::new();
-        let remainder = &raw[GTS_PREFIX.len()..];
-
-        // Split by ~ preserving empties to detect trailing ~
-        let tilde_parts: Vec<&str> = remainder.split('~').collect();
-        let mut parts = Vec::new();
-
-        for i in 0..tilde_parts.len() {
-            if i < tilde_parts.len() - 1 {
-                parts.push(format!("{}~", tilde_parts[i]));
-                if i == tilde_parts.len() - 2 && tilde_parts[i + 1].is_empty() {
-                    break;
-                }
-            } else {
-                parts.push(tilde_parts[i].to_owned());
-            }
-        }
-
-        let mut offset = GTS_PREFIX.len();
-        for (i, part) in parts.iter().enumerate() {
-            if part.is_empty() || part == "~" {
-                return Err(GtsError::Id {
-                    id: id.to_owned(),
-                    cause: format!("GTS segment #{} @ offset {offset} is empty", i + 1),
-                });
-            }
-
-            gts_id_segments.push(GtsIdSegment::new(i + 1, offset, part)?);
-            offset += part.len();
-        }
-
-        // Issue #37: Single-segment instance IDs are prohibited
-        // Instance IDs must be chained with at least one type segment (e.g., 'type~instance')
-        // This check should only apply to non-wildcard, non-type single-segment IDs
+        // Issue #37: Single-segment instance IDs are prohibited.
+        // Instance IDs must be chained with at least one type segment (e.g., 'type~instance').
         if gts_id_segments.len() == 1
             && !gts_id_segments[0].is_type
             && !gts_id_segments[0].is_wildcard

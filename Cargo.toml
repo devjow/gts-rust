@@ -9,7 +9,7 @@ categories = ["development-tools::build-utils"]
 readme = "README.md"
 
 [workspace]
-members = ["gts", "gts-cli", "gts-macros", "gts-macros-cli"]
+members = ["gts", "gts-cli", "gts-id", "gts-macros", "gts-macros-cli"]
 resolver = "2"
 
 [workspace.lints.rust]
@@ -142,6 +142,7 @@ module_name_repetitions = "allow"
 [workspace.dependencies]
 gts = { version = "0.7.8", path = "gts" }
 gts-cli = { version = "0.7.8", path = "gts-cli" }
+gts-id = { version = "0.7.8", path = "gts-id" }
 gts-macros = { version = "0.7.8", path = "gts-macros" }
 gts-macros-cli = { version = "0.7.8", path = "gts-macros-cli" }
 

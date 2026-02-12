@@ -641,6 +641,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 name = "gts"
 version = "0.7.8"
 dependencies = [
+ "gts-id",
  "jsonschema",
  "schemars",
  "serde",
@@ -676,10 +677,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gts-id"
+version = "0.7.8"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "gts-macros"
 version = "0.7.8"
 dependencies = [
  "gts",
+ "gts-id",
  "jsonschema",
  "proc-macro2",
  "quote",
