@@ -250,9 +250,8 @@ pub fn validate_segment(
         }
 
         let major_str = &tokens[4][1..];
-        result.ver_major = parse_u32_exact(major_str).ok_or_else(|| {
-            format!("Major version must be an integer, got '{major_str}'")
-        })?;
+        result.ver_major = parse_u32_exact(major_str)
+            .ok_or_else(|| format!("Major version must be an integer, got '{major_str}'"))?;
     }
 
     if tokens.len() > 5 {
@@ -261,9 +260,10 @@ pub fn validate_segment(
             return Ok(result);
         }
 
-        result.ver_minor = Some(parse_u32_exact(tokens[5]).ok_or_else(|| {
-            format!("Minor version must be an integer, got '{}'", tokens[5])
-        })?);
+        result.ver_minor = Some(
+            parse_u32_exact(tokens[5])
+                .ok_or_else(|| format!("Minor version must be an integer, got '{}'", tokens[5]))?,
+        );
     }
 
     Ok(result)
@@ -280,10 +280,7 @@ pub fn validate_segment(
 ///
 /// # Errors
 /// Returns [`GtsIdError`] on validation failure.
-pub fn validate_gts_id(
-    id: &str,
-    allow_wildcards: bool,
-) -> Result<Vec<ParsedSegment>, GtsIdError> {
+pub fn validate_gts_id(id: &str, allow_wildcards: bool) -> Result<Vec<ParsedSegment>, GtsIdError> {
     let raw = id.trim();
 
     if !raw.starts_with(GTS_PREFIX) {
@@ -346,14 +343,13 @@ pub fn validate_gts_id(
             });
         }
 
-        let mut parsed = validate_segment(i + 1, seg, allow_wildcards).map_err(|cause| {
-            GtsIdError::Segment {
+        let mut parsed =
+            validate_segment(i + 1, seg, allow_wildcards).map_err(|cause| GtsIdError::Segment {
                 num: i + 1,
                 offset,
                 segment: seg.clone(),
                 cause,
-            }
-        })?;
+            })?;
         parsed.offset = offset;
         offset += seg.len();
         parsed_segments.push(parsed);
@@ -465,19 +461,28 @@ mod tests {
     #[test]
     fn test_segment_version_without_v() {
         let err = validate_segment(1, "x.core.events.event.1~", false).unwrap_err();
-        assert!(err.contains("Major version must start with 'v'"), "got: {err}");
+        assert!(
+            err.contains("Major version must start with 'v'"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn test_segment_version_not_integer() {
         let err = validate_segment(1, "x.core.events.event.vX~", false).unwrap_err();
-        assert!(err.contains("Major version must be an integer"), "got: {err}");
+        assert!(
+            err.contains("Major version must be an integer"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn test_segment_version_leading_zeros() {
         let err = validate_segment(1, "x.core.events.event.v01~", false).unwrap_err();
-        assert!(err.contains("Major version must be an integer"), "got: {err}");
+        assert!(
+            err.contains("Major version must be an integer"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -595,10 +600,7 @@ mod tests {
         .unwrap_err();
         match err {
             GtsIdError::Segment {
-                num,
-                offset,
-                cause,
-                ..
+                num, offset, cause, ..
             } => {
                 assert_eq!(num, 2);
                 // offset = "gts.".len() + "x.core.modkit.plugin.v1~".len() = 4 + 24 = 28
@@ -614,8 +616,7 @@ mod tests {
 
     #[test]
     fn test_gts_id_instance_no_tilde_end() {
-        let segments =
-            validate_gts_id("gts.x.core.events.event.v1~a.b.c.d.v1.0", false).unwrap();
+        let segments = validate_gts_id("gts.x.core.events.event.v1~a.b.c.d.v1.0", false).unwrap();
         assert_eq!(segments.len(), 2);
         assert!(segments[0].is_type);
         assert!(!segments[1].is_type);

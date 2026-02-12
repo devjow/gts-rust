@@ -69,15 +69,14 @@ impl GtsIdSegment {
     }
 
     fn parse_segment_id(&mut self, segment: &str) -> Result<(), GtsError> {
-        let parsed =
-            gts_id::validate_segment(self.num, segment, true).map_err(|cause| {
-                GtsError::Segment {
-                    num: self.num,
-                    offset: self.offset,
-                    segment: self.segment.clone(),
-                    cause,
-                }
-            })?;
+        let parsed = gts_id::validate_segment(self.num, segment, true).map_err(|cause| {
+            GtsError::Segment {
+                num: self.num,
+                offset: self.offset,
+                segment: self.segment.clone(),
+                cause,
+            }
+        })?;
         self.vendor = parsed.vendor;
         self.package = parsed.package;
         self.namespace = parsed.namespace;
