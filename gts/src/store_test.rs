@@ -4240,3 +4240,41 @@ fn test_op13_circular_ref_does_not_hang() {
     // Should terminate and produce a value (circular part is dropped)
     assert!(resolved.is_object(), "should produce a valid object");
 }
+
+#[test]
+fn test_resolve_schema_refs_checked_detects_duplicate_ref_in_allof() {
+    let mut store = GtsStore::new(None);
+
+    // Register a standalone trait schema
+    let trait_schema = json!({
+        "$id": "gts://gts.x.test.dup.trait.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "retention": {"type": "string"}
+        }
+    });
+    store
+        .register_schema("gts.x.test.dup.trait.v1~", &trait_schema)
+        .expect("register trait schema");
+
+    // A trait schema value with duplicate $ref in allOf
+    let trait_schema_value = json!({
+        "type": "object",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.dup.trait.v1~"},
+            {"$ref": "gts://gts.x.test.dup.trait.v1~"}
+        ]
+    });
+
+    // The checked version should detect the duplicate as a cycle
+    let result = store.resolve_schema_refs_checked(&trait_schema_value);
+    assert!(
+        result.is_err(),
+        "resolve_schema_refs_checked should detect duplicate $ref in allOf, got: {result:?}",
+    );
+
+    // The non-checked version should resolve fine (no error)
+    let resolved = store.resolve_schema_refs(&trait_schema_value);
+    assert!(resolved.is_object(), "resolve_schema_refs should succeed");
+}

@@ -235,15 +235,20 @@ impl GtsStore {
     pub fn resolve_schema_refs(&self, schema: &Value) -> Value {
         let mut visited = std::collections::HashSet::new();
         let mut cycle_found = false;
-        self.resolve_schema_refs_inner(schema, &mut visited, &mut cycle_found)
+        self.resolve_schema_refs_inner(schema, &mut visited, &mut cycle_found, false)
     }
 
     /// Like [`resolve_schema_refs`] but returns an error if a circular `$ref`
     /// is detected during resolution.
+    ///
+    /// Uses strict cycle detection: once a `$ref` target is visited it stays
+    /// in the seen-set for the entire resolution pass, so both true circular
+    /// references **and** duplicate `$ref`s (e.g. the same URI twice in
+    /// `allOf`) are flagged.
     pub(crate) fn resolve_schema_refs_checked(&self, schema: &Value) -> Result<Value, String> {
         let mut visited = std::collections::HashSet::new();
         let mut cycle_found = false;
-        let resolved = self.resolve_schema_refs_inner(schema, &mut visited, &mut cycle_found);
+        let resolved = self.resolve_schema_refs_inner(schema, &mut visited, &mut cycle_found, true);
         if cycle_found {
             Err("circular $ref detected".to_owned())
         } else {
@@ -257,6 +262,7 @@ impl GtsStore {
         schema: &Value,
         visited: &mut std::collections::HashSet<String>,
         cycle_found: &mut bool,
+        strict_cycles: bool,
     ) -> Value {
         // Recursively resolve $ref references in the schema
         match schema {
@@ -277,7 +283,12 @@ impl GtsStore {
                             for (k, v) in map {
                                 new_map.insert(
                                     k.clone(),
-                                    self.resolve_schema_refs_inner(v, visited, cycle_found),
+                                    self.resolve_schema_refs_inner(
+                                        v,
+                                        visited,
+                                        cycle_found,
+                                        strict_cycles,
+                                    ),
                                 );
                             }
                             return Value::Object(new_map);
@@ -297,7 +308,12 @@ impl GtsStore {
                             if k != "$ref" {
                                 new_map.insert(
                                     k.clone(),
-                                    self.resolve_schema_refs_inner(v, visited, cycle_found),
+                                    self.resolve_schema_refs_inner(
+                                        v,
+                                        visited,
+                                        cycle_found,
+                                        strict_cycles,
+                                    ),
                                 );
                             }
                         }
@@ -314,9 +330,15 @@ impl GtsStore {
                         // Mark as visited before recursing
                         visited.insert(canonical_ref.to_owned());
                         // Recursively resolve refs in the referenced schema
-                        let mut resolved =
-                            self.resolve_schema_refs_inner(&entity.content, visited, cycle_found);
-                        visited.remove(canonical_ref);
+                        let mut resolved = self.resolve_schema_refs_inner(
+                            &entity.content,
+                            visited,
+                            cycle_found,
+                            strict_cycles,
+                        );
+                        if !strict_cycles {
+                            visited.remove(canonical_ref);
+                        }
 
                         // Remove $id and $schema from resolved content to avoid URL resolution issues
                         // Note: $defs for GtsInstanceId/GtsSchemaId are inlined during resolution (see match above)
@@ -337,7 +359,12 @@ impl GtsStore {
                                 if k != "$ref" {
                                     merged.insert(
                                         k.clone(),
-                                        self.resolve_schema_refs_inner(v, visited, cycle_found),
+                                        self.resolve_schema_refs_inner(
+                                            v,
+                                            visited,
+                                            cycle_found,
+                                            strict_cycles,
+                                        ),
                                     );
                                 }
                             }
@@ -351,7 +378,12 @@ impl GtsStore {
                         if k != "$ref" {
                             new_map.insert(
                                 k.clone(),
-                                self.resolve_schema_refs_inner(v, visited, cycle_found),
+                                self.resolve_schema_refs_inner(
+                                    v,
+                                    visited,
+                                    cycle_found,
+                                    strict_cycles,
+                                ),
                             );
                         }
                     }
@@ -368,8 +400,12 @@ impl GtsStore {
                     let mut merged_required: Vec<String> = Vec::new();
 
                     for item in all_of_array {
-                        let resolved_item =
-                            self.resolve_schema_refs_inner(item, visited, cycle_found);
+                        let resolved_item = self.resolve_schema_refs_inner(
+                            item,
+                            visited,
+                            cycle_found,
+                            strict_cycles,
+                        );
 
                         match resolved_item {
                             Value::Object(ref item_map) => {
@@ -433,14 +469,14 @@ impl GtsStore {
                 for (k, v) in map {
                     new_map.insert(
                         k.clone(),
-                        self.resolve_schema_refs_inner(v, visited, cycle_found),
+                        self.resolve_schema_refs_inner(v, visited, cycle_found, strict_cycles),
                     );
                 }
                 Value::Object(new_map)
             }
             Value::Array(arr) => Value::Array(
                 arr.iter()
-                    .map(|v| self.resolve_schema_refs_inner(v, visited, cycle_found))
+                    .map(|v| self.resolve_schema_refs_inner(v, visited, cycle_found, strict_cycles))
                     .collect(),
             ),
             _ => schema.clone(),
