@@ -57,6 +57,16 @@ pub enum Commands {
         #[arg(long)]
         gts_id: String,
     },
+    /// Validate a schema against its base schema (OP#12 schema-vs-schema)
+    ValidateSchema {
+        #[arg(long)]
+        schema_id: String,
+    },
+    /// Validate an entity (instance or schema) by GTS ID
+    ValidateEntity {
+        #[arg(long)]
+        gts_id: String,
+    },
     /// Resolve relationships for an entity
     ResolveRelationships {
         #[arg(long)]
@@ -205,6 +215,14 @@ async fn run_command(cli: Cli) -> Result<()> {
         }
         Commands::ValidateInstance { gts_id } => {
             let result = ops.validate_instance(&gts_id);
+            print_result(&result)?;
+        }
+        Commands::ValidateSchema { schema_id } => {
+            let result = ops.validate_schema(&schema_id);
+            print_result(&result)?;
+        }
+        Commands::ValidateEntity { gts_id } => {
+            let result = ops.validate_entity(&gts_id);
             print_result(&result)?;
         }
         Commands::ResolveRelationships { gts_id } => {

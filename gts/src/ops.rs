@@ -89,6 +89,15 @@ pub struct GtsValidationResult {
     pub error: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GtsEntityValidationResult {
+    pub id: String,
+    pub ok: bool,
+    pub entity_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
 /// Schema graph result - serializes directly as the graph object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -575,7 +584,17 @@ impl GtsOps {
     }
 
     pub fn validate_schema(&mut self, gts_id: &str) -> GtsValidationResult {
-        match self.store.validate_schema(gts_id) {
+        // First run basic schema validation (meta-schema, refs, etc.)
+        if let Err(e) = self.store.validate_schema(gts_id) {
+            return GtsValidationResult {
+                id: gts_id.to_owned(),
+                ok: false,
+                error: e.to_string(),
+            };
+        }
+
+        // Then run schema-vs-schema chain validation (OP#12)
+        match self.store.validate_schema_chain(gts_id) {
             Ok(()) => GtsValidationResult {
                 id: gts_id.to_owned(),
                 ok: true,
@@ -589,11 +608,23 @@ impl GtsOps {
         }
     }
 
-    pub fn validate_entity(&mut self, gts_id: &str) -> GtsValidationResult {
+    pub fn validate_entity(&mut self, gts_id: &str) -> GtsEntityValidationResult {
         if gts_id.ends_with('~') {
-            self.validate_schema(gts_id)
+            let result = self.validate_schema(gts_id);
+            GtsEntityValidationResult {
+                id: result.id,
+                ok: result.ok,
+                entity_type: "schema".to_owned(),
+                error: result.error,
+            }
         } else {
-            self.validate_instance(gts_id)
+            let result = self.validate_instance(gts_id);
+            GtsEntityValidationResult {
+                id: result.id,
+                ok: result.ok,
+                entity_type: "instance".to_owned(),
+                error: result.error,
+            }
         }
     }
 

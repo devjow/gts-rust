@@ -5,6 +5,7 @@ pub mod ops;
 pub mod path_resolver;
 pub mod schema;
 pub mod schema_cast;
+pub mod schema_compat;
 pub mod store;
 pub mod x_gts_ref;
 

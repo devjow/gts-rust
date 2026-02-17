@@ -72,6 +72,8 @@ impl GtsHttpServer {
             .route("/match-id-pattern", get(match_id_pattern))
             .route("/uuid", get(id_to_uuid))
             .route("/validate-instance", post(validate_instance))
+            .route("/validate-schema", post(validate_schema))
+            .route("/validate-entity", post(validate_entity))
             .route("/resolve-relationships", get(schema_graph))
             .route("/compatibility", get(compatibility))
             .route("/cast", post(cast))
@@ -177,6 +179,17 @@ struct CastRequest {
 #[derive(Deserialize, serde::Serialize)]
 struct ValidateInstanceRequest {
     instance_id: String,
+}
+
+#[derive(Deserialize, serde::Serialize)]
+struct ValidateSchemaRequest {
+    schema_id: String,
+}
+
+#[derive(Deserialize, serde::Serialize)]
+struct ValidateEntityRequest {
+    #[serde(alias = "gts_id")]
+    entity_id: String,
 }
 
 // Helper function to lock mutex or return error response
@@ -323,6 +336,30 @@ async fn validate_instance(
         Err(response) => return response.into_response(),
     };
     let result = ops.validate_instance(&body.instance_id);
+    Json(result).into_response()
+}
+
+async fn validate_schema(
+    State(state): State<AppState>,
+    Json(body): Json<ValidateSchemaRequest>,
+) -> impl IntoResponse {
+    let mut ops = match lock_ops(&state.ops) {
+        Ok(guard) => guard,
+        Err(response) => return response.into_response(),
+    };
+    let result = ops.validate_schema(&body.schema_id);
+    Json(result).into_response()
+}
+
+async fn validate_entity(
+    State(state): State<AppState>,
+    Json(body): Json<ValidateEntityRequest>,
+) -> impl IntoResponse {
+    let mut ops = match lock_ops(&state.ops) {
+        Ok(guard) => guard,
+        Err(response) => return response.into_response(),
+    };
+    let result = ops.validate_entity(&body.entity_id);
     Json(result).into_response()
 }
 

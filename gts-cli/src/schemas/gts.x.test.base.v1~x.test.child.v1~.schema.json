@@ -1,0 +1,26 @@
+{
+  "$id": "gts://gts.x.test.base.v1~x.test.child.v1~",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "allOf": [
+    {
+      "$ref": "gts://gts.x.test.base.v1~"
+    },
+    {
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "event_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "event_type"
+      ]
+    }
+  ],
+  "description": "Child event",
+  "title": "ChildEvent (extends BaseEvent)",
+  "type": "object"
+}
