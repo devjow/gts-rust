@@ -574,7 +574,7 @@ dependencies = [
 name = "gts-id"
 version = "0.7.8"
 dependencies = [
- "thiserror 2.0.17",
+ "thiserror",
 ]
 
 [[package]]
