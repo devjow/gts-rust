@@ -484,15 +484,28 @@ impl GtsStore {
     }
 
     fn remove_x_gts_ref_fields(schema: &Value) -> Value {
-        // Recursively remove x-gts-ref fields from a schema
+        // Recursively remove x-gts-ref fields from a schema.
         // This is needed because the jsonschema crate doesn't understand x-gts-ref
-        // and will fail on JSON Pointer references like "/$id"
+        // and will fail on JSON Pointer references like "/$id".
+        //
+        // Additionally, when x-gts-ref removal leaves combinator branches (oneOf/
+        // anyOf/allOf) as empty objects `{}`, those combinator keywords themselves
+        // must be removed. Otherwise the jsonschema crate treats the empty branches
+        // as match-everything schemas, causing e.g. oneOf to reject valid instances
+        // because "more than one branch matched".
         match schema {
             Value::Object(map) => {
                 let mut new_map = serde_json::Map::new();
                 for (key, value) in map {
                     if key == "x-gts-ref" {
-                        continue; // Skip x-gts-ref fields
+                        continue;
+                    }
+                    // For combinator keywords, check if all branches become
+                    // empty objects after stripping; if so, drop the keyword.
+                    if (key == "oneOf" || key == "anyOf" || key == "allOf")
+                        && Self::is_all_empty_after_strip(value)
+                    {
+                        continue;
                     }
                     new_map.insert(key.clone(), Self::remove_x_gts_ref_fields(value));
                 }
@@ -502,6 +515,19 @@ impl GtsStore {
                 Value::Array(arr.iter().map(Self::remove_x_gts_ref_fields).collect())
             }
             _ => schema.clone(),
+        }
+    }
+
+    /// Returns true if `value` is an array where every element becomes an empty
+    /// object after recursively stripping `x-gts-ref`.
+    fn is_all_empty_after_strip(value: &Value) -> bool {
+        if let Some(arr) = value.as_array() {
+            arr.iter().all(|item| {
+                let stripped = Self::remove_x_gts_ref_fields(item);
+                stripped.as_object().is_some_and(serde_json::Map::is_empty)
+            })
+        } else {
+            false
         }
     }
 
@@ -1015,6 +1041,13 @@ impl GtsStore {
         // Resolve internal #/ references (like #/$defs/GtsInstanceId) by inlining them
         // This handles the compile-time inlining of GtsInstanceId and GtsSchemaId
         let schema_with_internal_refs_resolved = self.resolve_schema_refs(&schema);
+
+        // Remove x-gts-ref fields before jsonschema validation.
+        // x-gts-ref is a GTS extension unknown to the jsonschema crate; leaving it
+        // inside oneOf/anyOf/allOf branches would cause those branches to be treated
+        // as empty match-everything schemas, breaking combinator semantics.
+        let schema_with_internal_refs_resolved =
+            Self::remove_x_gts_ref_fields(&schema_with_internal_refs_resolved);
 
         tracing::debug!(
             "Schema for validation: {}",

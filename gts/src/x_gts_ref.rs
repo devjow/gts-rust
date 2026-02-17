@@ -183,6 +183,57 @@ impl XGtsRefValidator {
             errors.push(error);
         }
 
+        // Handle oneOf combinator: exactly one branch must match (zero errors)
+        if let Some(Value::Array(branches)) = sch_obj.get("oneOf") {
+            let mut matching_count = 0usize;
+            for branch in branches {
+                let mut branch_errors = Vec::new();
+                self.visit_instance(inst, branch, root_schema, path, &mut branch_errors);
+                if branch_errors.is_empty() {
+                    matching_count += 1;
+                }
+            }
+            if matching_count == 0 {
+                errors.push(XGtsRefValidationError::new(
+                    path.to_owned(),
+                    inst.to_string(),
+                    String::new(),
+                    "oneOf: no branch matched".to_owned(),
+                ));
+            } else if matching_count > 1 {
+                errors.push(XGtsRefValidationError::new(
+                    path.to_owned(),
+                    inst.to_string(),
+                    String::new(),
+                    format!("oneOf: {matching_count} branches matched, expected exactly 1"),
+                ));
+            }
+        }
+
+        // Handle anyOf combinator: at least one branch must match (zero errors)
+        if let Some(Value::Array(branches)) = sch_obj.get("anyOf") {
+            let any_match = branches.iter().any(|branch| {
+                let mut branch_errors = Vec::new();
+                self.visit_instance(inst, branch, root_schema, path, &mut branch_errors);
+                branch_errors.is_empty()
+            });
+            if !any_match {
+                errors.push(XGtsRefValidationError::new(
+                    path.to_owned(),
+                    inst.to_string(),
+                    String::new(),
+                    "anyOf: no branch matched".to_owned(),
+                ));
+            }
+        }
+
+        // Handle allOf combinator: all branches must match (zero errors)
+        if let Some(Value::Array(branches)) = sch_obj.get("allOf") {
+            for branch in branches {
+                self.visit_instance(inst, branch, root_schema, path, errors);
+            }
+        }
+
         // Recurse into object properties
         if let Some(Value::String(type_str)) = sch_obj.get("type") {
             if type_str == "object" {
