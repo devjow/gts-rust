@@ -222,7 +222,7 @@ gts uuid --gts-id "gts.x.core.events.event.v1.5" --scope major
 }
 ```
 
-#### OP#6 - Schema Validation
+#### OP#6 - Instance Validation
 
 Validate object instances against their corresponding schemas.
 
@@ -410,6 +410,39 @@ gts --path ./.gts-spec/examples attr --gts-with-path "gts.x.core.events.event.v1
 }
 ```
 
+#### OP#12 - Schema Validation
+
+Validate that a derived (chained) schema is compatible with its base schema. The derived schema may only tighten constraints, never loosen them.
+
+```bash
+# Validate a chained schema against its base
+gts --path ./.gts-spec/examples validate-schema \
+    --schema-id "gts.x.core.events.event.v1~vendor.app._.custom.v2~"
+
+# The system:
+# 1. Walks the schema chain (each segment pair)
+# 2. Resolves $ref / allOf for both base and derived
+# 3. Checks that derived only tightens properties, required fields,
+#    additionalProperties, enum/const, bounds, patterns, etc.
+```
+
+**Output (valid):**
+```json
+{
+  "id": "gts.x.core.events.event.v1~vendor.app._.custom.v2~",
+  "ok": true
+}
+```
+
+**Output (incompatible):**
+```json
+{
+  "id": "gts.x.core.events.event.v1~vendor.app._.custom.v2~",
+  "ok": false,
+  "error": "Schema chain validation failed: derived schema 'gts...' loosens additionalProperties from false in base 'gts...'"
+}
+```
+
 #### Additional Commands
 
 **List Entities:**
@@ -571,7 +604,7 @@ let id2 = GtsID::new("gts.x.core.events.event.v1.5")?;
 assert_eq!(id1.to_uuid(), id2.to_uuid());
 ```
 
-#### OP#6 - Schema Validation
+#### OP#6 - Instance Validation
 
 ```rust
 // Validate instance against its schema
@@ -719,6 +752,27 @@ if !result.ok {
 }
 ```
 
+#### OP#12 - Schema Validation
+
+```rust
+// Validate a derived schema against its base (schema-vs-schema)
+let result = ops.validate_schema(
+    "gts.x.core.events.event.v1~vendor.app._.custom.v2~"
+);
+assert!(result.ok);
+
+// The system walks the chain and checks each pair:
+//   base = gts.x.core.events.event.v1~
+//   derived = gts.x.core.events.event.v1~vendor.app._.custom.v2~
+// Derived may add properties, tighten constraints, add required fields,
+// but may NOT loosen additionalProperties, remove required fields,
+// widen enum/const, relax bounds, etc.
+
+if !result.ok {
+    println!("Schema incompatibility: {}", result.error);
+}
+```
+
 #### Complete Example
 
 ```rust
@@ -774,6 +828,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let attr = ops.attr("gts.x.core.events.event.v1.0@name");
     println!("Name: {}", attr.value);
 
+    // OP#12: Validate derived schema against base
+    let validation = ops.validate_schema(
+        "gts.x.core.events.event.v1~vendor.app._.custom.v2~"
+    );
+    println!("Schema compatible: {}", validation.ok);
+
     Ok(())
 }
 ```
@@ -803,6 +863,11 @@ curl "http://localhost:8000/query?expr=gts.x.core.*&limit=10"
 curl -X POST http://localhost:8000/entities \
   -H "Content-Type: application/json" \
   -d '{"gtsId": "gts.x.core.events.event.v1.0", "data": "..."}'
+
+# Validate schema (OP#12 - schema-vs-schema chain validation)
+curl -X POST http://localhost:8000/validate-schema \
+  -H "Content-Type: application/json" \
+  -d '{"schema_id": "gts.x.core.events.event.v1~vendor.app._.custom.v2~"}'
 ```
 
 ## Configuration
