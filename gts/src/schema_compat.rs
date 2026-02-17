@@ -115,6 +115,17 @@ pub(crate) fn validate_schema_compatibility(
         }
     }
 
+    // Check if derived loosens additionalProperties constraint
+    if base_disallows_additional {
+        let derived_allows_additional =
+            !matches!(derived.additional_properties, Some(Value::Bool(false)));
+        if derived_allows_additional {
+            errors.push(format!(
+                "derived schema '{derived_id}' loosens additionalProperties from false in base '{base_id}'"
+            ));
+        }
+    }
+
     // Check that derived doesn't remove fields from base's required set
     check_required_removal(base, derived, base_id, derived_id, &mut errors);
 
@@ -134,46 +145,58 @@ fn compare_property_constraints(
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    let (Some(base_map), Some(derived_map)) = (base_prop.as_object(), derived_prop.as_object())
-    else {
+    // If base is not an object schema, it places no constraints to loosen.
+    let Some(base_map) = base_prop.as_object() else {
+        return;
+    };
+
+    // If derived is a boolean `true` schema (or any non-object), it accepts
+    // everything and therefore loosens any constraint the base defines.
+    let Some(derived_map) = derived_prop.as_object() else {
+        errors.push(format!(
+            "property '{prop_name}': derived replaces schema object with a non-object value, \
+             loosening base constraints"
+        ));
         return;
     };
 
     // Type compatibility: if base specifies a type, derived must use the same type
     check_type_compatibility(base_map, derived_map, prop_name, errors);
 
-    // const: if base has const, derived must have same const (or omit it)
+    // `const` and `enum` are "value-enumerating" constraints that fully specify the
+    // set of allowed values.  When the derived schema introduces one of these, omitting
+    // bounds-type keywords (maxLength, minimum, …) or pattern is NOT loosening because
+    // the allowed values are already a finite, explicit set.
+    let derived_has_const = derived_map.contains_key("const");
+    let derived_has_enum = derived_map.contains_key("enum");
+    let derived_enumerates_values = derived_has_const || derived_has_enum;
+
+    // const: if base has const, derived must have same const (not omit it).
+    // Exception: derived may replace const with enum that includes the const value
+    // (still tighter or equal).
     check_const_compatibility(base_map, derived_map, prop_name, errors);
 
-    // pattern: if base has pattern and derived changes it, flag as incompatible
-    check_pattern_compatibility(base_map, derived_map, prop_name, errors);
-
-    // maxLength: derived must be <= base
-    check_upper_bound(base_map, derived_map, "maxLength", prop_name, errors);
-    // maximum: derived must be <= base
-    check_upper_bound(base_map, derived_map, "maximum", prop_name, errors);
-    // maxItems: derived must be <= base
-    check_upper_bound(base_map, derived_map, "maxItems", prop_name, errors);
-
-    // minLength: derived must be >= base
-    check_lower_bound(base_map, derived_map, "minLength", prop_name, errors);
-    // minimum: derived must be >= base
-    check_lower_bound(base_map, derived_map, "minimum", prop_name, errors);
-    // minItems: derived must be >= base
-    check_lower_bound(base_map, derived_map, "minItems", prop_name, errors);
-
-    // enum: derived must be a subset of base
-    if let (Some(Value::Array(base_enum)), Some(Value::Array(derived_enum))) =
-        (base_map.get("enum"), derived_map.get("enum"))
-    {
-        for val in derived_enum {
-            if !base_enum.contains(val) {
-                errors.push(format!(
-                    "property '{prop_name}': derived enum contains value {val} not in base enum"
-                ));
-            }
-        }
+    // pattern: if base has pattern, derived must keep it — unless derived enumerates values
+    if !derived_enumerates_values {
+        check_pattern_compatibility(base_map, derived_map, prop_name, errors);
     }
+
+    // Upper bounds: derived must be <= base — unless derived enumerates values
+    if !derived_enumerates_values {
+        check_upper_bound(base_map, derived_map, "maxLength", prop_name, errors);
+        check_upper_bound(base_map, derived_map, "maximum", prop_name, errors);
+        check_upper_bound(base_map, derived_map, "maxItems", prop_name, errors);
+    }
+
+    // Lower bounds: derived must be >= base — unless derived enumerates values
+    if !derived_enumerates_values {
+        check_lower_bound(base_map, derived_map, "minLength", prop_name, errors);
+        check_lower_bound(base_map, derived_map, "minimum", prop_name, errors);
+        check_lower_bound(base_map, derived_map, "minItems", prop_name, errors);
+    }
+
+    // enum: if base has enum, derived must have enum subset (or const within base enum)
+    check_enum_compatibility(base_map, derived_map, prop_name, errors);
 
     // Array items sub-schema comparison
     check_items_compatibility(base_map, derived_map, prop_name, errors);
@@ -218,19 +241,27 @@ fn check_type_compatibility(
 /// - Base has no `const`, derived adds one → OK (tightening)
 /// - Base has `const`, derived has same `const` → OK (idempotent)
 /// - Base has `const`, derived has different `const` → ERROR
+/// - Base has `const`, derived omits it → ERROR (loosening)
 fn check_const_compatibility(
     base_map: &serde_json::Map<String, Value>,
     derived_map: &serde_json::Map<String, Value>,
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    if let Some(base_const) = base_map.get("const")
-        && let Some(derived_const) = derived_map.get("const")
-        && base_const != derived_const
-    {
-        errors.push(format!(
-            "property '{prop_name}': derived redefines const from {base_const} to {derived_const}"
-        ));
+    if let Some(base_const) = base_map.get("const") {
+        match derived_map.get("const") {
+            Some(derived_const) if base_const != derived_const => {
+                errors.push(format!(
+                    "property '{prop_name}': derived redefines const from {base_const} to {derived_const}"
+                ));
+            }
+            None => {
+                errors.push(format!(
+                    "property '{prop_name}': derived omits const constraint ({base_const}) defined in base"
+                ));
+            }
+            _ => {} // Same const or derived adds tightening
+        }
     }
 }
 
@@ -239,18 +270,65 @@ fn check_const_compatibility(
 /// If base defines a `pattern` and derived defines a different `pattern`,
 /// the schemas are considered incompatible (we cannot determine subset
 /// relationships between arbitrary regexes).
+/// If base defines a `pattern` and derived omits it, that's also incompatible (loosening).
 fn check_pattern_compatibility(
     base_map: &serde_json::Map<String, Value>,
     derived_map: &serde_json::Map<String, Value>,
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    if let (Some(base_pat), Some(derived_pat)) =
-        (base_map.get("pattern"), derived_map.get("pattern"))
-        && base_pat != derived_pat
-    {
+    if let Some(base_pat) = base_map.get("pattern") {
+        match derived_map.get("pattern") {
+            Some(derived_pat) if base_pat != derived_pat => {
+                errors.push(format!(
+                    "property '{prop_name}': derived changes pattern from {base_pat} to {derived_pat}"
+                ));
+            }
+            None => {
+                errors.push(format!(
+                    "property '{prop_name}': derived omits pattern constraint ({base_pat}) defined in base"
+                ));
+            }
+            _ => {} // Same pattern
+        }
+    }
+}
+
+/// Helper: check `enum` compatibility.
+///
+/// If base defines an `enum`, derived must also define an `enum` that is a subset,
+/// or define a `const` whose value is in the base enum (tightening from set to single value).
+/// If base has `enum` and derived omits both `enum` and `const`, that's incompatible (loosening).
+fn check_enum_compatibility(
+    base_map: &serde_json::Map<String, Value>,
+    derived_map: &serde_json::Map<String, Value>,
+    prop_name: &str,
+    errors: &mut Vec<String>,
+) {
+    if let Some(Value::Array(base_enum)) = base_map.get("enum") {
+        // Check if derived has enum (subset check)
+        if let Some(Value::Array(derived_enum)) = derived_map.get("enum") {
+            for val in derived_enum {
+                if !base_enum.contains(val) {
+                    errors.push(format!(
+                        "property '{prop_name}': derived enum contains value {val} not in base enum"
+                    ));
+                }
+            }
+            return;
+        }
+        // Check if derived has const (must be in base enum — tightening from set to single)
+        if let Some(derived_const) = derived_map.get("const") {
+            if !base_enum.contains(derived_const) {
+                errors.push(format!(
+                    "property '{prop_name}': derived const {derived_const} is not in base enum"
+                ));
+            }
+            return;
+        }
+        // Neither enum nor const — loosening
         errors.push(format!(
-            "property '{prop_name}': derived changes pattern from {base_pat} to {derived_pat}"
+            "property '{prop_name}': derived omits enum constraint defined in base"
         ));
     }
 }
@@ -259,18 +337,26 @@ fn check_pattern_compatibility(
 ///
 /// If both base and derived have `items`, recursively compare them using the
 /// same property-constraint logic (type changes, const, bounds, etc.).
+/// If base has `items` and derived omits it, that's incompatible (loosening).
 fn check_items_compatibility(
     base_map: &serde_json::Map<String, Value>,
     derived_map: &serde_json::Map<String, Value>,
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    if let (Some(base_items), Some(derived_items)) =
-        (base_map.get("items"), derived_map.get("items"))
-    {
-        // Reuse compare_property_constraints for the items sub-schema
-        let items_name = format!("{prop_name}.items");
-        compare_property_constraints(base_items, derived_items, &items_name, errors);
+    if let Some(base_items) = base_map.get("items") {
+        match derived_map.get("items") {
+            Some(derived_items) => {
+                // Reuse compare_property_constraints for the items sub-schema
+                let items_name = format!("{prop_name}.items");
+                compare_property_constraints(base_items, derived_items, &items_name, errors);
+            }
+            None => {
+                errors.push(format!(
+                    "property '{prop_name}': derived omits items constraint defined in base"
+                ));
+            }
+        }
     }
 }
 
@@ -301,6 +387,7 @@ fn check_required_removal(
 }
 
 /// Helper: derived upper-bound constraint must be **<=** base.
+/// If base has an upper bound and derived omits it, that's incompatible (loosening).
 fn check_upper_bound(
     base_map: &serde_json::Map<String, Value>,
     derived_map: &serde_json::Map<String, Value>,
@@ -308,17 +395,28 @@ fn check_upper_bound(
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    if let (Some(base_val), Some(derived_val)) = (base_map.get(keyword), derived_map.get(keyword))
-        && let (Some(b), Some(d)) = (base_val.as_f64(), derived_val.as_f64())
-        && d > b
-    {
-        errors.push(format!(
-            "property '{prop_name}': derived {keyword} ({d}) exceeds base {keyword} ({b})"
-        ));
+    if let Some(base_val) = base_map.get(keyword) {
+        match derived_map.get(keyword) {
+            Some(derived_val) => {
+                if let (Some(b), Some(d)) = (base_val.as_f64(), derived_val.as_f64())
+                    && d > b
+                {
+                    errors.push(format!(
+                        "property '{prop_name}': derived {keyword} ({d}) exceeds base {keyword} ({b})"
+                    ));
+                }
+            }
+            None => {
+                errors.push(format!(
+                    "property '{prop_name}': derived omits {keyword} constraint ({base_val}) defined in base"
+                ));
+            }
+        }
     }
 }
 
 /// Helper: derived lower-bound constraint must be **>=** base.
+/// If base has a lower bound and derived omits it, that's incompatible (loosening).
 fn check_lower_bound(
     base_map: &serde_json::Map<String, Value>,
     derived_map: &serde_json::Map<String, Value>,
@@ -326,13 +424,23 @@ fn check_lower_bound(
     prop_name: &str,
     errors: &mut Vec<String>,
 ) {
-    if let (Some(base_val), Some(derived_val)) = (base_map.get(keyword), derived_map.get(keyword))
-        && let (Some(b), Some(d)) = (base_val.as_f64(), derived_val.as_f64())
-        && d < b
-    {
-        errors.push(format!(
-            "property '{prop_name}': derived {keyword} ({d}) is less than base {keyword} ({b})"
-        ));
+    if let Some(base_val) = base_map.get(keyword) {
+        match derived_map.get(keyword) {
+            Some(derived_val) => {
+                if let (Some(b), Some(d)) = (base_val.as_f64(), derived_val.as_f64())
+                    && d < b
+                {
+                    errors.push(format!(
+                        "property '{prop_name}': derived {keyword} ({d}) is less than base {keyword} ({b})"
+                    ));
+                }
+            }
+            None => {
+                errors.push(format!(
+                    "property '{prop_name}': derived omits {keyword} constraint ({base_val}) defined in base"
+                ));
+            }
+        }
     }
 }
 
@@ -577,5 +685,186 @@ mod tests {
         }));
         let errs = validate_schema_compatibility(&base, &derived, "b", "d");
         assert!(!errs.is_empty());
+    }
+
+    #[test]
+    fn test_boolean_true_schema_loosens_constrained_property() {
+        // Derived replaces a constrained property with boolean `true` schema
+        // (which accepts anything), silently loosening the contract.
+        let base = EffectiveSchema {
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("age".to_owned(), json!({"type": "integer", "maximum": 120}));
+                m
+            },
+            required: HashSet::new(),
+            additional_properties: None,
+        };
+        let derived = EffectiveSchema {
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("age".to_owned(), Value::Bool(true));
+                m
+            },
+            required: HashSet::new(),
+            additional_properties: None,
+        };
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        assert!(
+            !errs.is_empty(),
+            "Boolean true schema should be flagged as loosening: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn test_boolean_true_schema_ok_when_base_unconstrained() {
+        // If base property is also unconstrained (no special keywords),
+        // derived using boolean true is not loosening anything meaningful.
+        let base = EffectiveSchema {
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("name".to_owned(), json!({"type": "string"}));
+                m
+            },
+            required: HashSet::new(),
+            additional_properties: None,
+        };
+        let derived = EffectiveSchema {
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("name".to_owned(), Value::Bool(true));
+                m
+            },
+            required: HashSet::new(),
+            additional_properties: None,
+        };
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        // Base only has "type" constraint. Boolean true does remove that.
+        // However, dropping type information is still loosening.
+        // For unconstrained base (no type even), this would be OK.
+        // Currently this WILL flag because type in base exists but derived is not an object.
+        // This behavior is acceptable – boolean true schemas should not appear in valid GTS.
+        assert!(
+            !errs.is_empty(),
+            "Boolean true schema replaces typed property - should flag"
+        );
+    }
+
+    #[test]
+    fn test_enum_tightening_allows_omitting_bounds() {
+        // Derived introduces enum, which is strictly tighter than maxLength.
+        // Omitting maxLength when adding enum is NOT loosening.
+        let base = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "tier": {"type": "string", "maxLength": 100}
+            }
+        }));
+        let derived = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "tier": {"type": "string", "enum": ["gold", "platinum"]}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        assert!(
+            errs.is_empty(),
+            "enum tightening should allow omitting maxLength: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn test_const_tightening_allows_omitting_bounds_and_pattern() {
+        // Derived introduces const, which is the tightest possible constraint.
+        // Omitting bounds and pattern when adding const is NOT loosening.
+        let base = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "v": {"type": "string", "maxLength": 100, "pattern": "^[a-z]+$"}
+            }
+        }));
+        let derived = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "v": {"type": "string", "const": "hello"}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        assert!(
+            errs.is_empty(),
+            "const tightening should allow omitting maxLength and pattern: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn test_enum_tightening_allows_omitting_numeric_bounds() {
+        // Derived introduces enum for an integer property, omitting min/max.
+        let base = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "priority": {"type": "integer", "minimum": 0, "maximum": 100}
+            }
+        }));
+        let derived = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "priority": {"type": "integer", "enum": [1, 5, 10]}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        assert!(
+            errs.is_empty(),
+            "enum tightening should allow omitting min/max: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn test_omitting_bounds_without_enum_or_const_still_fails() {
+        // Derived omits maxLength without adding enum or const — still loosening.
+        let base = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "maxLength": 100}
+            }
+        }));
+        let derived = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived, "b", "d");
+        assert!(
+            !errs.is_empty(),
+            "Omitting maxLength without enum/const should still fail"
+        );
+    }
+
+    #[test]
+    fn test_derived_const_must_be_in_base_enum() {
+        // Base has enum, derived narrows to const — but const value must be in base enum.
+        let base = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["active", "inactive"]}
+            }
+        }));
+        let derived_ok = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "const": "active"}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived_ok, "b", "d");
+        assert!(errs.is_empty(), "const in base enum should be ok: {errs:?}");
+
+        let derived_bad = extract_effective_schema(&json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "const": "deleted"}
+            }
+        }));
+        let errs = validate_schema_compatibility(&base, &derived_bad, "b", "d");
+        assert!(!errs.is_empty(), "const NOT in base enum should fail");
     }
 }

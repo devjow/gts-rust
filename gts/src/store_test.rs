@@ -3487,3 +3487,221 @@ fn test_op12_property_disabled_fails() {
         "Disabling a property defined in base should fail"
     );
 }
+
+#[test]
+fn test_op12_derived_loosens_additional_properties_to_true() {
+    let mut store = GtsStore::new(None);
+
+    // Base schema with additionalProperties: false
+    let base = json!({
+        "$id": "gts://gts.x.test.addl.closed.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"}
+        },
+        "additionalProperties": false
+    });
+    store
+        .register_schema("gts.x.test.addl.closed.v1~", &base)
+        .expect("register base");
+
+    // Derived schema that sets additionalProperties: true (loosening)
+    let derived = json!({
+        "$id": "gts://gts.x.test.addl.closed.v1~x.test._.open.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.addl.closed.v1~"}
+        ],
+        "additionalProperties": true
+    });
+    store
+        .register_schema("gts.x.test.addl.closed.v1~x.test._.open.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.addl.closed.v1~x.test._.open.v1~");
+    assert!(
+        result.is_err(),
+        "Loosening additionalProperties from false to true should fail"
+    );
+}
+
+#[test]
+fn test_op12_derived_omits_additional_properties() {
+    let mut store = GtsStore::new(None);
+
+    // Base schema with additionalProperties: false
+    let base = json!({
+        "$id": "gts://gts.x.test.addl.closed2.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"}
+        },
+        "additionalProperties": false
+    });
+    store
+        .register_schema("gts.x.test.addl.closed2.v1~", &base)
+        .expect("register base");
+
+    // Derived schema that omits additionalProperties (defaults to true, loosening)
+    let derived = json!({
+        "$id": "gts://gts.x.test.addl.closed2.v1~x.test._.omit.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.addl.closed2.v1~"}
+        ]
+        // additionalProperties omitted
+    });
+    store
+        .register_schema("gts.x.test.addl.closed2.v1~x.test._.omit.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.addl.closed2.v1~x.test._.omit.v1~");
+    assert!(
+        result.is_err(),
+        "Omitting additionalProperties when base has false should fail"
+    );
+}
+
+#[test]
+fn test_op12_derived_omits_const() {
+    let mut store = GtsStore::new(None);
+    let base = json!({
+        "$id": "gts://gts.x.test.const.base.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "const": "active"}
+        }
+    });
+    store
+        .register_schema("gts.x.test.const.base.v1~", &base)
+        .expect("register base");
+
+    let derived = json!({
+        "$id": "gts://gts.x.test.const.base.v1~x.test._.loose.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.const.base.v1~"},
+            {
+                "properties": {
+                    "status": {"type": "string"}  // omits const
+                }
+            }
+        ]
+    });
+    store
+        .register_schema("gts.x.test.const.base.v1~x.test._.loose.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.const.base.v1~x.test._.loose.v1~");
+    assert!(result.is_err(), "Omitting const should fail");
+}
+
+#[test]
+fn test_op12_derived_omits_pattern() {
+    let mut store = GtsStore::new(None);
+    let base = json!({
+        "$id": "gts://gts.x.test.pattern.base.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "email": {"type": "string", "pattern": "^[a-z]+@[a-z]+\\.[a-z]+$"}
+        }
+    });
+    store
+        .register_schema("gts.x.test.pattern.base.v1~", &base)
+        .expect("register base");
+
+    let derived = json!({
+        "$id": "gts://gts.x.test.pattern.base.v1~x.test._.loose.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.pattern.base.v1~"},
+            {
+                "properties": {
+                    "email": {"type": "string"}  // omits pattern
+                }
+            }
+        ]
+    });
+    store
+        .register_schema("gts.x.test.pattern.base.v1~x.test._.loose.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.pattern.base.v1~x.test._.loose.v1~");
+    assert!(result.is_err(), "Omitting pattern should fail");
+}
+
+#[test]
+fn test_op12_derived_omits_enum() {
+    let mut store = GtsStore::new(None);
+    let base = json!({
+        "$id": "gts://gts.x.test.enum.base.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "role": {"type": "string", "enum": ["admin", "user"]}
+        }
+    });
+    store
+        .register_schema("gts.x.test.enum.base.v1~", &base)
+        .expect("register base");
+
+    let derived = json!({
+        "$id": "gts://gts.x.test.enum.base.v1~x.test._.loose.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.enum.base.v1~"},
+            {
+                "properties": {
+                    "role": {"type": "string"}  // omits enum
+                }
+            }
+        ]
+    });
+    store
+        .register_schema("gts.x.test.enum.base.v1~x.test._.loose.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.enum.base.v1~x.test._.loose.v1~");
+    assert!(result.is_err(), "Omitting enum should fail");
+}
+
+#[test]
+fn test_op12_derived_omits_max_length() {
+    let mut store = GtsStore::new(None);
+    let base = json!({
+        "$id": "gts://gts.x.test.maxlen.base.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": 50}
+        }
+    });
+    store
+        .register_schema("gts.x.test.maxlen.base.v1~", &base)
+        .expect("register base");
+
+    let derived = json!({
+        "$id": "gts://gts.x.test.maxlen.base.v1~x.test._.loose.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "allOf": [
+            {"$ref": "gts://gts.x.test.maxlen.base.v1~"},
+            {
+                "properties": {
+                    "name": {"type": "string"}  // omits maxLength
+                }
+            }
+        ]
+    });
+    store
+        .register_schema("gts.x.test.maxlen.base.v1~x.test._.loose.v1~", &derived)
+        .expect("register derived");
+
+    let result = store.validate_schema_chain("gts.x.test.maxlen.base.v1~x.test._.loose.v1~");
+    assert!(result.is_err(), "Omitting maxLength should fail");
+}
