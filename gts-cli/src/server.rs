@@ -416,3 +416,43 @@ async fn attr(State(state): State<AppState>, Query(params): Query<AttrQuery>) ->
     let result = ops.attr(&params.gts_with_path);
     Json(result).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_limit() {
+        assert_eq!(default_limit(), 100);
+    }
+
+    #[test]
+    fn test_lock_ops_success() {
+        let ops = GtsOps::new(None, None, 0);
+        let state = Arc::new(Mutex::new(ops));
+
+        let result = lock_ops(&state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_app_state_creation() {
+        let ops = GtsOps::new(None, None, 0);
+        let _state = AppState {
+            ops: Arc::new(Mutex::new(ops)),
+        };
+
+        // AppState is Clone, verified by compilation
+    }
+
+    #[test]
+    fn test_gts_http_server_creation() {
+        let ops = GtsOps::new(None, None, 0);
+        let server = GtsHttpServer::new(ops, "127.0.0.1".to_owned(), 8080, 0);
+
+        // Server is created successfully - just verify struct construction
+        assert_eq!(server.host, "127.0.0.1");
+        assert_eq!(server.port, 8080);
+        assert_eq!(server.verbose, 0);
+    }
+}

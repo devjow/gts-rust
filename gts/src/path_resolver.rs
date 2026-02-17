@@ -250,4 +250,211 @@ mod tests {
         assert!(!result.resolved);
         assert!(result.error.is_some());
     }
+
+    #[test]
+    fn test_normalize_slash_to_dot() {
+        let normalized = JsonPathResolver::normalize("outer/inner/deep");
+        assert_eq!(normalized, "outer.inner.deep");
+    }
+
+    #[test]
+    fn test_normalize_already_dotted() {
+        let normalized = JsonPathResolver::normalize("outer.inner.deep");
+        assert_eq!(normalized, "outer.inner.deep");
+    }
+
+    #[test]
+    fn test_split_raw_parts() {
+        let parts = JsonPathResolver::split_raw_parts("a.b.c");
+        assert_eq!(parts, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_split_raw_parts_empty() {
+        let parts = JsonPathResolver::split_raw_parts("");
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn test_split_raw_parts_trailing_dots() {
+        let parts = JsonPathResolver::split_raw_parts("a..b...c");
+        assert_eq!(parts, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_parse_part_simple() {
+        let parts = JsonPathResolver::parse_part("field");
+        assert_eq!(parts, vec!["field"]);
+    }
+
+    #[test]
+    fn test_parse_part_with_bracket() {
+        let parts = JsonPathResolver::parse_part("field[0]");
+        assert_eq!(parts, vec!["field", "[0]"]);
+    }
+
+    #[test]
+    fn test_parse_part_multiple_brackets() {
+        let parts = JsonPathResolver::parse_part("arr[0][1]");
+        assert_eq!(parts, vec!["arr", "[0]", "[1]"]);
+    }
+
+    #[test]
+    fn test_parse_part_unclosed_bracket() {
+        let parts = JsonPathResolver::parse_part("field[0");
+        assert_eq!(parts, vec!["field", "[0"]);
+    }
+
+    #[test]
+    fn test_resolve_array_bracket_notation() {
+        let content = json!({"items": [1, 2, 3]});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("items.[1]");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::Number(2.into())));
+    }
+
+    #[test]
+    fn test_resolve_nested_array() {
+        let content = json!({"outer": {"items": [1, 2, 3]}});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("outer.items[2]");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::Number(3.into())));
+    }
+
+    #[test]
+    fn test_resolve_array_out_of_bounds() {
+        let content = json!({"items": [1, 2, 3]});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("items[10]");
+        assert!(!result.resolved);
+        assert!(result.error.as_ref().unwrap().contains("out of range"));
+    }
+
+    #[test]
+    fn test_resolve_invalid_array_index() {
+        let content = json!({"items": [1, 2, 3]});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("items[abc]");
+        assert!(!result.resolved);
+        assert!(
+            result
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("Expected list index")
+        );
+    }
+
+    #[test]
+    fn test_resolve_bracket_on_object() {
+        let content = json!({"obj": {"field": "value"}});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("obj[0]");
+        assert!(!result.resolved);
+        assert!(result.error.as_ref().unwrap().contains("Path not found"));
+    }
+
+    #[test]
+    fn test_resolve_descend_into_primitive() {
+        let content = json!({"field": "value"});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("field.nested");
+        assert!(!result.resolved);
+        assert!(result.error.as_ref().unwrap().contains("Cannot descend"));
+    }
+
+    #[test]
+    fn test_resolve_slash_notation() {
+        let content = json!({"outer": {"inner": "value"}});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("outer/inner");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::String("value".to_owned())));
+    }
+
+    #[test]
+    fn test_resolve_empty_path() {
+        let content = json!({"field": "value"});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content.clone());
+        let result = resolver.resolve("");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(content));
+    }
+
+    #[test]
+    fn test_failure_method() {
+        let content = json!({"field": "value"});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.failure("some.path", "custom error");
+        assert!(!result.resolved);
+        assert_eq!(result.path, "some.path");
+        assert_eq!(result.error, Some("custom error".to_owned()));
+        assert_eq!(result.available_fields, Some(Vec::new()));
+    }
+
+    #[test]
+    fn test_list_available_complex() {
+        let content = json!({
+            "a": {"b": {"c": 1}},
+            "x": [1, 2, {"y": "z"}]
+        });
+        let mut fields = Vec::new();
+        JsonPathResolver::list_available(&content, "", &mut fields);
+        assert!(fields.contains(&"a".to_owned()));
+        assert!(fields.contains(&"a.b".to_owned()));
+        assert!(fields.contains(&"a.b.c".to_owned()));
+        assert!(fields.contains(&"x".to_owned()));
+        assert!(fields.contains(&"x[0]".to_owned()));
+        assert!(fields.contains(&"x[2].y".to_owned()));
+    }
+
+    #[test]
+    fn test_collect_from() {
+        let content = json!({"a": 1, "b": {"c": 2}});
+        let fields = JsonPathResolver::collect_from(&content);
+        assert!(fields.contains(&"a".to_owned()));
+        assert!(fields.contains(&"b".to_owned()));
+        assert!(fields.contains(&"b.c".to_owned()));
+    }
+
+    #[test]
+    fn test_resolve_deeply_nested() {
+        let content = json!({"a": {"b": {"c": {"d": {"e": "deep"}}}}});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("a.b.c.d.e");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::String("deep".to_owned())));
+    }
+
+    #[test]
+    fn test_resolve_array_of_arrays() {
+        let content = json!({"matrix": [[1, 2], [3, 4], [5, 6]]});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("matrix[1][0]");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::Number(3.into())));
+    }
+
+    #[test]
+    fn test_resolve_mixed_path() {
+        let content = json!({"data": [{"name": "first"}, {"name": "second"}]});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("data[1].name");
+        assert!(result.resolved);
+        assert_eq!(result.value, Some(Value::String("second".to_owned())));
+    }
+
+    #[test]
+    fn test_available_fields_on_error() {
+        let content = json!({"field1": "value", "field2": "other"});
+        let resolver = JsonPathResolver::new("gts.test.v1~".to_owned(), content);
+        let result = resolver.resolve("nonexistent");
+        assert!(!result.resolved);
+        assert!(result.available_fields.is_some());
+        let fields = result.available_fields.unwrap();
+        assert!(fields.contains(&"field1".to_owned()));
+        assert!(fields.contains(&"field2".to_owned()));
+    }
 }

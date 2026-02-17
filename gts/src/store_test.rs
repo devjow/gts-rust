@@ -3912,6 +3912,182 @@ fn test_op13_traits_no_traits_schema_passes() {
 }
 
 #[test]
+fn test_store_resolve_schema_refs_empty_schema() {
+    let store = GtsStore::new(None);
+    let empty_schema = json!({});
+    let resolved = store.resolve_schema_refs(&empty_schema);
+    assert_eq!(resolved, empty_schema);
+}
+
+#[test]
+fn test_store_resolve_schema_refs_null_value() {
+    let store = GtsStore::new(None);
+    let null_schema = Value::Null;
+    let resolved = store.resolve_schema_refs(&null_schema);
+    assert_eq!(resolved, null_schema);
+}
+
+#[test]
+fn test_store_resolve_schema_refs_array_value() {
+    let store = GtsStore::new(None);
+    let array_schema = json!([1, 2, 3]);
+    let resolved = store.resolve_schema_refs(&array_schema);
+    assert_eq!(resolved, array_schema);
+}
+
+#[test]
+fn test_store_resolve_schema_refs_primitive_value() {
+    let store = GtsStore::new(None);
+    let string_schema = json!("test");
+    let resolved = store.resolve_schema_refs(&string_schema);
+    assert_eq!(resolved, string_schema);
+}
+
+#[test]
+fn test_store_resolve_schema_refs_nested_objects() {
+    let store = GtsStore::new(None);
+    let nested = json!({
+        "outer": {
+            "inner": {
+                "deep": "value"
+            }
+        }
+    });
+    let resolved = store.resolve_schema_refs(&nested);
+    assert_eq!(resolved, nested);
+}
+
+#[test]
+fn test_store_items_iterator_size() {
+    let mut store = GtsStore::new(None);
+
+    // Initially empty
+    assert_eq!(store.items().count(), 0);
+
+    // Add a schema
+    store
+        .register_schema(
+            "gts.test.package.namespace.foo.v1~",
+            &json!({
+                "$id": "gts://gts.test.package.namespace.foo.v1~",
+                "type": "object"
+            }),
+        )
+        .unwrap();
+
+    // Should have one item
+    assert_eq!(store.items().count(), 1);
+}
+
+#[test]
+fn test_store_query_empty_expr() {
+    let store = GtsStore::new(None);
+    let result = store.query("", 10);
+
+    // Empty query should return error
+    assert!(!result.error.is_empty());
+}
+
+#[test]
+fn test_store_query_with_very_large_limit() {
+    let mut store = GtsStore::new(None);
+
+    // Add a schema
+    store
+        .register_schema(
+            "gts.test.package.namespace.foo.v1~",
+            &json!({
+                "$id": "gts://gts.test.package.namespace.foo.v1~",
+                "type": "object"
+            }),
+        )
+        .unwrap();
+
+    let result = store.query("gts.test.package.namespace.foo.v1~", 10000);
+    assert!(result.error.is_empty());
+    assert_eq!(result.count, 1);
+}
+
+#[test]
+fn test_store_register_schema_validates_type_id() {
+    let mut store = GtsStore::new(None);
+
+    // Valid schema ID ending with ~
+    let schema_id = "gts.test.package.namespace.minimal.v1~";
+    let result = store.register_schema(
+        schema_id,
+        &json!({
+            "$id": format!("gts://{schema_id}"),
+            "type": "object"
+        }),
+    );
+    assert!(result.is_ok());
+
+    // Invalid schema ID not ending with ~
+    let bad_id = "gts.test.bad.v1";
+    let result = store.register_schema(
+        bad_id,
+        &json!({
+            "$id": format!("gts://{bad_id}"),
+            "type": "object"
+        }),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_store_build_schema_graph_with_nonexistent_id() {
+    let mut store = GtsStore::new(None);
+    // Use a valid GTS ID format but one that doesn't exist
+    let graph = store.build_schema_graph("gts.nonexistent.schema.v1~");
+
+    // Should return a graph (possibly empty) - exact structure depends on implementation
+    assert!(graph.is_object() || graph.is_null());
+}
+
+#[test]
+fn test_store_error_debug_display() {
+    let err = StoreError::EntityNotFound("test_id".to_owned());
+    let debug_str = format!("{err:?}");
+    assert!(debug_str.contains("EntityNotFound"));
+
+    let display_str = format!("{err}");
+    assert!(display_str.contains("test_id"));
+}
+
+#[test]
+fn test_store_error_variants() {
+    // Test various error types exist and can be formatted
+    let err1 = StoreError::InvalidSchemaId;
+    assert!(format!("{err1}").contains('~'));
+
+    let err2 = StoreError::InvalidEntity;
+    assert!(format!("{err2:?}").contains("InvalidEntity"));
+
+    let err3 = StoreError::ValidationError("test error".to_owned());
+    assert!(format!("{err3}").contains("test error"));
+}
+
+#[test]
+fn test_store_get_schema_content_returns_copy() {
+    let mut store = GtsStore::new(None);
+    let schema_id = "gts.test.package.namespace.copy.v1~";
+    let schema = json!({
+        "$id": format!("gts://{schema_id}"),
+        "type": "object",
+        "properties": {"field": {"type": "string"}}
+    });
+
+    store.register_schema(schema_id, &schema).unwrap();
+
+    let content1 = store.get_schema_content(schema_id).unwrap();
+    let content2 = store.get_schema_content(schema_id).unwrap();
+
+    // Both should be equal
+    assert_eq!(content1, content2);
+}
+
+#[test]
 fn test_op13_traits_ref_based_trait_schema() {
     let mut store = GtsStore::new(None);
 

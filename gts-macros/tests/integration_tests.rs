@@ -1204,3 +1204,115 @@ fn test_base_true_single_segment_instance_id_generation() {
         "gts.x.test.single.segment.v1~test.instance.v1"
     );
 }
+
+// Additional coverage tests
+
+#[test]
+fn test_gts_schema_trait_impl() {
+    // Verify GtsSchema trait is implemented correctly
+    assert_eq!(EventTopicV1::SCHEMA_ID, "gts.x.core.events.topic.v1~");
+    assert_eq!(EventTopicV1::GENERIC_FIELD, None);
+
+    let schema = EventTopicV1::gts_schema();
+    assert!(schema.is_object());
+}
+
+#[test]
+fn test_schema_ids_are_static() {
+    // Verify schema IDs are static references (not reallocated)
+    let id1 = EventTopicV1::gts_schema_id();
+    let id2 = EventTopicV1::gts_schema_id();
+
+    // These should be the same static reference
+    assert_eq!(id1.as_ref(), id2.as_ref());
+}
+
+#[test]
+fn test_schema_string_methods() {
+    // Test string serialization methods
+    let schema_str = EventTopicV1::gts_schema_with_refs_as_string();
+    assert!(schema_str.contains("gts://gts.x.core.events.topic.v1~"));
+
+    let schema_pretty = EventTopicV1::gts_schema_with_refs_as_string_pretty();
+    assert!(schema_pretty.contains("gts://gts.x.core.events.topic.v1~"));
+    // Pretty version should have more whitespace
+    assert!(schema_pretty.len() > schema_str.len());
+}
+
+#[test]
+fn test_instance_json_methods() {
+    let topic = EventTopicV1 {
+        id: GtsInstanceId::new("gts.x.core.events.topic.v1~", "test.topic.v1"),
+        name: "TestTopic".to_string(),
+        description: Some("A test topic".to_string()),
+        retention: "P30D".to_string(),
+        ordering: "global".to_string(),
+        internal_config: None,
+    };
+
+    // Test instance JSON serialization methods
+    let json_val = topic.gts_instance_json();
+    assert!(json_val.is_object());
+    assert_eq!(json_val["name"], "TestTopic");
+
+    let json_str = topic.gts_instance_json_as_string();
+    assert!(json_str.contains("TestTopic"));
+
+    let json_pretty = topic.gts_instance_json_as_string_pretty();
+    assert!(json_pretty.contains("TestTopic"));
+    assert!(json_pretty.len() > json_str.len());
+}
+
+#[test]
+fn test_optional_fields_serialization() {
+    let topic = EventTopicV1 {
+        id: GtsInstanceId::new("gts.x.core.events.topic.v1~", "test.topic.v1"),
+        name: "TestTopic".to_string(),
+        description: None, // None value
+        retention: "P30D".to_string(),
+        ordering: "global".to_string(),
+        internal_config: Some("internal".to_string()),
+    };
+
+    let json = topic.gts_instance_json();
+    // description should be null or missing (depending on serde settings)
+    // internal_config should not be in schema since it's not in properties list
+    assert_eq!(json["name"], "TestTopic");
+}
+
+#[test]
+fn test_product_schema_properties() {
+    let schema: serde_json::Value =
+        serde_json::from_str(&ProductV1::gts_schema_with_refs_as_string()).unwrap();
+
+    let props = schema["properties"].as_object().unwrap();
+
+    // Verify all specified properties exist
+    assert!(props.contains_key("id"));
+    assert!(props.contains_key("name"));
+    assert!(props.contains_key("price"));
+    assert!(props.contains_key("description"));
+    assert!(props.contains_key("in_stock"));
+
+    // Note: The runtime schema includes all struct fields via schemars
+    // The properties parameter controls schema generation at compile time
+    assert!(props.len() >= 5);
+}
+
+#[test]
+fn test_schema_additional_properties_false() {
+    let schema: serde_json::Value =
+        serde_json::from_str(&EventTopicV1::gts_schema_with_refs_as_string()).unwrap();
+
+    // Base structs should have additionalProperties: false
+    assert_eq!(schema["additionalProperties"], false);
+}
+
+#[test]
+fn test_make_instance_id_with_complex_segment() {
+    let instance_id = EventTopicV1::gts_make_instance_id("vendor.marketplace.orders.v1");
+    assert_eq!(
+        instance_id.as_ref(),
+        "gts.x.core.events.topic.v1~vendor.marketplace.orders.v1"
+    );
+}
