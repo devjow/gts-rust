@@ -473,20 +473,26 @@ fn check_enumerated_values_against_base(
 ) {
     // Check numeric lower bounds (minimum, minLength, minItems)
     for keyword in &["minimum", "minLength", "minItems"] {
-        if let Some(base_val) = base_map.get(*keyword).and_then(|v| v.as_f64()) {
+        if let Some(base_val) = base_map.get(*keyword).and_then(Value::as_f64) {
             for val in values {
-                let numeric = match keyword {
-                    &"minLength" => val.as_str().map(|s| s.len() as f64),
-                    &"minItems" => val.as_array().map(|a| a.len() as f64),
+                let numeric: Option<f64> = match *keyword {
+                    "minLength" => val
+                        .as_str()
+                        .and_then(|s| u32::try_from(s.len()).ok())
+                        .map(f64::from),
+                    "minItems" => val
+                        .as_array()
+                        .and_then(|a| u32::try_from(a.len()).ok())
+                        .map(f64::from),
                     _ => val.as_f64(),
                 };
-                if let Some(n) = numeric {
-                    if n < base_val {
-                        errors.push(format!(
-                            "property '{prop_name}': derived const/enum value {val} violates \
-                             base {keyword} ({base_val})"
-                        ));
-                    }
+                if let Some(n) = numeric
+                    && n < base_val
+                {
+                    errors.push(format!(
+                        "property '{prop_name}': derived const/enum value {val} violates \
+                         base {keyword} ({base_val})"
+                    ));
                 }
             }
         }
@@ -494,20 +500,26 @@ fn check_enumerated_values_against_base(
 
     // Check numeric upper bounds (maximum, maxLength, maxItems)
     for keyword in &["maximum", "maxLength", "maxItems"] {
-        if let Some(base_val) = base_map.get(*keyword).and_then(|v| v.as_f64()) {
+        if let Some(base_val) = base_map.get(*keyword).and_then(Value::as_f64) {
             for val in values {
-                let numeric = match keyword {
-                    &"maxLength" => val.as_str().map(|s| s.len() as f64),
-                    &"maxItems" => val.as_array().map(|a| a.len() as f64),
+                let numeric: Option<f64> = match *keyword {
+                    "maxLength" => val
+                        .as_str()
+                        .and_then(|s| u32::try_from(s.len()).ok())
+                        .map(f64::from),
+                    "maxItems" => val
+                        .as_array()
+                        .and_then(|a| u32::try_from(a.len()).ok())
+                        .map(f64::from),
                     _ => val.as_f64(),
                 };
-                if let Some(n) = numeric {
-                    if n > base_val {
-                        errors.push(format!(
-                            "property '{prop_name}': derived const/enum value {val} violates \
-                             base {keyword} ({base_val})"
-                        ));
-                    }
+                if let Some(n) = numeric
+                    && n > base_val
+                {
+                    errors.push(format!(
+                        "property '{prop_name}': derived const/enum value {val} violates \
+                         base {keyword} ({base_val})"
+                    ));
                 }
             }
         }
