@@ -148,14 +148,6 @@ pub fn validate_segment(
 
     let ends_with_wildcard = allow_wildcards && seg.ends_with('*');
 
-    let is_extended_namespace = segment_num == 1
-        && !ends_with_wildcard
-        && tokens.len() == 6
-        && tokens[5].starts_with('v')
-        && is_valid_segment_token(tokens[2])
-        && is_valid_segment_token(tokens[3])
-        && is_valid_segment_token(tokens[4]);
-
     if !ends_with_wildcard && tokens.len() < 5 {
         return Err(format!(
             "Too few tokens (got {}, min 5). Expected format: {fmt}",
@@ -164,13 +156,9 @@ pub fn validate_segment(
     }
 
     // Detect extra name token before version (e.g., vendor.package.namespace.type.extra.v1)
-    //
-    // We allow a 5-token name prefix by treating tokens[2] + tokens[3] as a composite
-    // namespace (joined by '.'), and tokens[4] as the type name.
     if !ends_with_wildcard && tokens.len() == 6 {
         let has_wildcard = allow_wildcards && tokens.contains(&"*");
         if !has_wildcard
-            && !is_extended_namespace
             && !tokens[4].starts_with('v')
             && tokens[5].starts_with('v')
             && is_valid_segment_token(tokens[4])
@@ -252,11 +240,7 @@ pub fn validate_segment(
             result.is_wildcard = true;
             return Ok(result);
         }
-        if is_extended_namespace {
-            result.namespace = format!("{}.{}", tokens[2], tokens[3]);
-        } else {
-            tokens[3].clone_into(&mut result.type_name);
-        }
+        tokens[3].clone_into(&mut result.type_name);
     }
 
     if tokens.len() > 4 {
@@ -268,29 +252,16 @@ pub fn validate_segment(
             return Ok(result);
         }
 
-        if is_extended_namespace {
-            tokens[4].clone_into(&mut result.type_name);
-        }
-
-        let major_token = if is_extended_namespace {
-            tokens[5]
-        } else {
-            tokens[4]
-        };
-        if !major_token.starts_with('v') {
+        if !tokens[4].starts_with('v') {
             return Err("Major version must start with 'v'".to_owned());
         }
 
-        let major_str = &major_token[1..];
+        let major_str = &tokens[4][1..];
         result.ver_major = parse_u32_exact(major_str)
             .ok_or_else(|| format!("Major version must be an integer, got '{major_str}'"))?;
     }
 
     if tokens.len() > 5 {
-        if is_extended_namespace {
-            return Ok(result);
-        }
-
         if allow_wildcards && tokens[5] == "*" {
             result.is_wildcard = true;
             return Ok(result);
@@ -492,18 +463,6 @@ mod tests {
             err.contains("Too many name tokens before version"),
             "got: {err}"
         );
-    }
-
-    #[test]
-    fn test_segment1_extended_namespace_allows_extra_name_token() {
-        let parsed = validate_segment(1, "x.test13.cyc.self.event.v1~", true).unwrap();
-        assert_eq!(parsed.vendor, "x");
-        assert_eq!(parsed.package, "test13");
-        assert_eq!(parsed.namespace, "cyc.self");
-        assert_eq!(parsed.type_name, "event");
-        assert_eq!(parsed.ver_major, 1);
-        assert_eq!(parsed.ver_minor, None);
-        assert!(parsed.is_type);
     }
 
     #[test]
