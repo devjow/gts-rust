@@ -29,6 +29,7 @@ pub enum GtsError {
 
 /// Parsed GTS segment containing vendor, package, namespace, type, and version info.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct GtsIdSegment {
     pub num: usize,
     pub offset: usize,
@@ -41,6 +42,7 @@ pub struct GtsIdSegment {
     pub ver_minor: Option<u32>,
     pub is_type: bool,
     pub is_wildcard: bool,
+    pub is_uuid_tail: bool,
 }
 
 impl GtsIdSegment {
@@ -62,6 +64,7 @@ impl GtsIdSegment {
             ver_minor: None,
             is_type: false,
             is_wildcard: false,
+            is_uuid_tail: false,
         };
 
         seg.parse_segment_id(&segment)?;
@@ -85,6 +88,7 @@ impl GtsIdSegment {
         self.ver_minor = parsed.ver_minor;
         self.is_type = parsed.is_type;
         self.is_wildcard = parsed.is_wildcard;
+        self.is_uuid_tail = parsed.is_uuid_tail;
         Ok(())
     }
 }
@@ -142,12 +146,16 @@ impl GtsID {
                 ver_minor: p.ver_minor,
                 is_type: p.is_type,
                 is_wildcard: p.is_wildcard,
+                is_uuid_tail: p.is_uuid_tail,
             })
             .collect();
 
         // Issue #37: Single-segment instance IDs are prohibited.
         // Instance IDs must be chained with at least one type segment (e.g., 'type~instance').
-        if gts_id_segments.len() == 1
+        // Exception: combined anonymous instances (UUID tail) are always valid.
+        let has_uuid_tail = gts_id_segments.last().is_some_and(|s| s.is_uuid_tail);
+        if !has_uuid_tail
+            && gts_id_segments.len() == 1
             && !gts_id_segments[0].is_type
             && !gts_id_segments[0].is_wildcard
         {
@@ -250,6 +258,11 @@ impl GtsID {
                 }
                 // Wildcard matches - accept anything after this point
                 return true;
+            }
+
+            // Non-wildcard UUID tail - compare raw segment string (the actual UUID)
+            if p_seg.is_uuid_tail && p_seg.segment != c_seg.segment {
+                return false;
             }
 
             // Non-wildcard segment - all fields must match exactly

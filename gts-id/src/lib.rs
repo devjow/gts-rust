@@ -39,6 +39,7 @@ pub enum GtsIdError {
 
 /// Result of successfully parsing a single GTS segment.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ParsedSegment {
     /// The raw segment string (including trailing `~` if present).
     pub raw: String,
@@ -60,6 +61,8 @@ pub struct ParsedSegment {
     pub is_type: bool,
     /// Whether this segment contains a wildcard `*` token.
     pub is_wildcard: bool,
+    /// Whether this segment is a UUID tail (combined anonymous instance).
+    pub is_uuid_tail: bool,
 }
 
 /// Expected format string for segment error messages.
@@ -74,6 +77,18 @@ fn expected_format(segment_num: usize) -> &'static str {
     } else {
         "vendor.package.namespace.type.vMAJOR[.MINOR]"
     }
+}
+
+/// Checks whether a string matches the UUID format
+/// `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (hex digits and dashes only).
+#[inline]
+#[must_use]
+pub fn is_uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
 }
 
 /// Validates a GTS segment token without regex.
@@ -209,6 +224,7 @@ pub fn validate_segment(
         ver_minor: None,
         is_type,
         is_wildcard: false,
+        is_uuid_tail: false,
     };
 
     if !tokens.is_empty() {
@@ -278,8 +294,10 @@ pub fn validate_segment(
 
 /// Validate a full GTS identifier string.
 ///
-/// Checks the `gts.` prefix, lowercase, no hyphens, length, then splits
-/// by `~` and validates each segment via [`validate_segment`].
+/// Checks the `gts.` prefix, lowercase, length, then splits by `~` and
+/// validates each segment via [`validate_segment`]. Hyphens are rejected
+/// in the GTS segments portion but permitted in a trailing UUID
+/// (combined anonymous instance, e.g. `gts.type.v1~schema.v1.0~<uuid>`).
 ///
 /// # Arguments
 /// * `id` - The raw GTS identifier string
@@ -304,13 +322,6 @@ pub fn validate_gts_id(id: &str, allow_wildcards: bool) -> Result<Vec<ParsedSegm
         });
     }
 
-    if raw.contains('-') {
-        return Err(GtsIdError::Id {
-            id: id.to_owned(),
-            cause: "must not contain '-'".to_owned(),
-        });
-    }
-
     if raw.len() > GTS_MAX_LENGTH {
         return Err(GtsIdError::Id {
             id: id.to_owned(),
@@ -321,15 +332,53 @@ pub fn validate_gts_id(id: &str, allow_wildcards: bool) -> Result<Vec<ParsedSegm
     let remainder = &raw[GTS_PREFIX.len()..];
     let tilde_parts: Vec<&str> = remainder.split('~').collect();
 
-    let mut segments_raw = Vec::new();
-    for i in 0..tilde_parts.len() {
-        if i < tilde_parts.len() - 1 {
-            segments_raw.push(format!("{}~", tilde_parts[i]));
-            if i == tilde_parts.len() - 2 && tilde_parts[i + 1].is_empty() {
-                break;
-            }
+    // Detect combined anonymous instance: last tilde-part is a UUID.
+    // e.g. "gts.type.v1~schema.v1.0~7a1d2f34-5678-49ab-9012-abcdef123456"
+    // The UUID tail is only valid when preceded by at least one type segment (ending with ~).
+    let uuid_tail: Option<&str> = {
+        let last = tilde_parts.last().copied().unwrap_or("");
+        if is_uuid(last) && tilde_parts.len() >= 2 {
+            Some(last)
         } else {
-            segments_raw.push(tilde_parts[i].to_owned());
+            None
+        }
+    };
+
+    // Reject hyphens in the GTS segments portion (hyphens are only allowed in the UUID tail).
+    let segments_portion = match uuid_tail {
+        Some(uuid) => &raw[..raw.len() - uuid.len() - 1], // strip "~<uuid>"
+        None => raw,
+    };
+    if segments_portion.contains('-') {
+        return Err(GtsIdError::Id {
+            id: id.to_owned(),
+            cause: "must not contain '-'".to_owned(),
+        });
+    }
+
+    // Build the list of raw segment strings, excluding the UUID tail.
+    // When a UUID tail is present, every preceding tilde-part was followed by '~'
+    // in the original string, so each is a type segment — append '~' to all of them.
+    // Otherwise use the standard reconstruction (last part may or may not have '~').
+    let seg_count = tilde_parts.len() - usize::from(uuid_tail.is_some());
+    let mut segments_raw: Vec<String> = Vec::new();
+    for (i, &part) in tilde_parts.iter().enumerate().take(seg_count) {
+        let is_last = i == seg_count - 1;
+        if part.is_empty() {
+            // The only allowed empty part is the single trailing one produced by a
+            // type-marker `~` at the end (e.g. "gts.v.p.n.t.v1~"). Any other empty
+            // part means consecutive tildes (e.g. "~~") or a leading tilde, which
+            // are invalid.
+            if !(is_last && uuid_tail.is_none()) {
+                return Err(GtsIdError::Id {
+                    id: id.to_owned(),
+                    cause: format!("empty segment at tilde-part #{}", i + 1),
+                });
+            }
+        } else if is_last && uuid_tail.is_none() {
+            segments_raw.push(part.to_owned());
+        } else {
+            segments_raw.push(format!("{part}~"));
         }
     }
 
@@ -360,6 +409,25 @@ pub fn validate_gts_id(id: &str, allow_wildcards: bool) -> Result<Vec<ParsedSegm
         parsed.offset = offset;
         offset += seg.len();
         parsed_segments.push(parsed);
+    }
+
+    // Append the UUID tail as a special ParsedSegment if present.
+    // All preceding segments are guaranteed to be type segments because we
+    // appended '~' to every gts_part in the uuid_tail branch above.
+    if let Some(uuid) = uuid_tail {
+        parsed_segments.push(ParsedSegment {
+            raw: uuid.to_owned(),
+            offset,
+            vendor: String::new(),
+            package: String::new(),
+            namespace: String::new(),
+            type_name: String::new(),
+            ver_major: 0,
+            ver_minor: None,
+            is_type: false,
+            is_wildcard: false,
+            is_uuid_tail: true,
+        });
     }
 
     Ok(parsed_segments)
@@ -657,8 +725,106 @@ mod tests {
     }
 
     #[test]
+    fn test_gts_id_double_tilde_rejected() {
+        let err = validate_gts_id("gts.x.test1.events.type.v1.0~~", false).unwrap_err();
+        match err {
+            GtsIdError::Id { cause, .. } => {
+                assert!(cause.contains("empty segment"), "got: {cause}");
+            }
+            GtsIdError::Segment { .. } => panic!("expected Id error, got: {err}"),
+        }
+    }
+
+    #[test]
     fn test_gts_id_whitespace_trimmed() {
         let segments = validate_gts_id("  gts.x.core.events.event.v1~  ", false).unwrap();
         assert_eq!(segments.len(), 1);
+    }
+
+    // ---- is_uuid ----
+
+    #[test]
+    fn test_is_uuid_valid() {
+        assert!(is_uuid("7a1d2f34-5678-49ab-9012-abcdef123456"));
+        assert!(is_uuid("00000000-0000-0000-0000-000000000000"));
+        assert!(is_uuid("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+    }
+
+    #[test]
+    fn test_is_uuid_invalid() {
+        assert!(!is_uuid("not-a-uuid"));
+        assert!(!is_uuid("7a1d2f34-5678-49ab-9012-abcdef12345")); // too short
+        assert!(!is_uuid("7a1d2f34-5678-49ab-9012-abcdef1234567")); // too long
+        assert!(!is_uuid("7a1d2f34-5678-49ab-9012-abcdef12345g")); // non-hex char
+        assert!(!is_uuid("7a1d2f3405678-49ab-9012-abcdef123456")); // dash in wrong place
+    }
+
+    // ---- combined anonymous instance ----
+
+    #[test]
+    fn test_combined_anonymous_instance_valid() {
+        let segments = validate_gts_id(
+            "gts.x.core.events.type.v1~x.commerce.orders.order_placed.v1.0~7a1d2f34-5678-49ab-9012-abcdef123456",
+            false,
+        )
+        .unwrap();
+        assert_eq!(segments.len(), 3);
+        assert!(segments[0].is_type);
+        assert!(segments[1].is_type);
+        assert!(segments[2].is_uuid_tail);
+        assert!(!segments[2].is_type);
+        assert_eq!(segments[2].raw, "7a1d2f34-5678-49ab-9012-abcdef123456");
+    }
+
+    #[test]
+    fn test_combined_anonymous_instance_single_prefix_valid() {
+        let segments = validate_gts_id(
+            "gts.x.core.events.type.v1~7a1d2f34-5678-49ab-9012-abcdef123456",
+            false,
+        )
+        .unwrap();
+        assert_eq!(segments.len(), 2);
+        assert!(segments[0].is_type);
+        assert!(segments[1].is_uuid_tail);
+    }
+
+    #[test]
+    fn test_combined_anonymous_instance_hyphen_in_segments_rejected() {
+        let err = validate_gts_id(
+            "gts.x-vendor.core.events.type.v1~x.commerce.orders.order_placed.v1.0~7a1d2f34-5678-49ab-9012-abcdef123456",
+            false,
+        )
+        .unwrap_err();
+        match err {
+            GtsIdError::Id { cause, .. } => {
+                assert!(cause.contains("'-'"), "got: {cause}");
+            }
+            GtsIdError::Segment { .. } => panic!("expected Id error, got: {err}"),
+        }
+    }
+
+    #[test]
+    fn test_uuid_alone_without_prefix_rejected() {
+        // A bare UUID with no GTS prefix is not a valid GTS ID
+        let err = validate_gts_id("7a1d2f34-5678-49ab-9012-abcdef123456", false).unwrap_err();
+        match err {
+            GtsIdError::Id { cause, .. } => {
+                assert!(cause.contains("must start with 'gts.'"), "got: {cause}");
+            }
+            GtsIdError::Segment { .. } => panic!("expected Id error, got: {err}"),
+        }
+    }
+
+    #[test]
+    fn test_uuid_tail_without_preceding_tilde_rejected() {
+        // UUID as the only segment (no preceding ~) must be rejected
+        // "gts." + UUID has no tilde_parts.len() >= 2
+        let err = validate_gts_id("gts.7a1d2f34-5678-49ab-9012-abcdef123456", false).unwrap_err();
+        match err {
+            GtsIdError::Id { cause, .. } => {
+                assert!(cause.contains("'-'"), "got: {cause}");
+            }
+            GtsIdError::Segment { .. } => panic!("expected Id error, got: {err}"),
+        }
     }
 }
