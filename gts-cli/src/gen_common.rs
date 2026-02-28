@@ -41,6 +41,7 @@ pub fn should_exclude_path(path: &Path, patterns: &[String]) -> bool {
 /// Supports: * (any characters), ** (any path segments)
 #[must_use]
 pub fn matches_glob_pattern(path: &str, pattern: &str) -> bool {
+    let normalized = path.replace('\\', "/");
     let regex_pattern = pattern
         .replace('.', r"\.")
         .replace("**", "<<DOUBLESTAR>>")
@@ -48,9 +49,9 @@ pub fn matches_glob_pattern(path: &str, pattern: &str) -> bool {
         .replace("<<DOUBLESTAR>>", ".*");
 
     if let Ok(re) = Regex::new(&format!("(^|/){regex_pattern}($|/)")) {
-        re.is_match(path)
+        re.is_match(&normalized)
     } else {
-        path.contains(pattern)
+        normalized.contains(pattern)
     }
 }
 
@@ -351,12 +352,12 @@ mod tests {
 
     #[test]
     fn test_safe_canonicalize_nonexistent_traversal_rejected() {
-        let _path = Path::new("/tmp/../etc/passwd");
-        // This path has .. in it and /tmp exists, but the .. is in the existing ancestor chain
-        // Safe canonicalize should resolve it via the existing /tmp parent
-        // The important test is a suffix with ..
-        let nonexistent = Path::new("/tmp/gts_test_nonexistent_12345/../escape");
-        let result = safe_canonicalize_nonexistent(nonexistent);
+        // Build a path with .. in the non-existent suffix via a real temp dir.
+        // TempDir exists on all platforms so canonicalize of the parent succeeds,
+        // but the sub-path `nonexistent/../escape` contains `..` and must be rejected.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let nonexistent = tmp.path().join("nonexistent").join("..").join("escape");
+        let result = safe_canonicalize_nonexistent(&nonexistent);
         assert!(result.is_err(), "Should reject '..' in non-existent suffix");
     }
 }
