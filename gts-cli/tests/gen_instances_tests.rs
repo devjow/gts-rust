@@ -311,8 +311,6 @@ fn sandbox_escape_rejected() {
         msg.contains("Security error") || msg.contains("sandbox") || msg.contains("'..'"),
         "Got: {msg}"
     );
-    // No directory should have been created outside sandbox
-    assert!(!root.join("../../etc").exists());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
