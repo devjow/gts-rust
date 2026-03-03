@@ -448,6 +448,56 @@ pub const ORDERS_TOPIC: &str = r#"{
 }"#;
 ```
 
+### Quick Start Guide
+
+**Step 1 — Declare the instance in a Rust source file:**
+
+```rust
+// src/gts/mod.rs
+#[gts_macros::gts_well_known_instance(
+    dir_path = "instances",
+    schema_id = "gts.x.core.events.topic.v1~",
+    instance_segment = "x.commerce._.orders.v1.0"
+)]
+pub const ORDERS_TOPIC: &str = r#"{
+    "name": "orders",
+    "description": "Order lifecycle events topic",
+    "retention": "P90D",
+    "partitions": 16
+}"#;
+```
+
+**Step 2 — Run the CLI to generate the `.instance.json` file:**
+
+```bash
+gts generate-from-rust --source src/ --mode instances
+```
+
+This produces `instances/gts.x.core.events.topic.v1~x.commerce._.orders.v1.0.instance.json` with the `"id"` field injected automatically.
+
+**Step 3 — Use the instance:**
+
+```rust
+// Reference the const directly (it's just a &str containing JSON)
+let topic: serde_json::Value = serde_json::from_str(ORDERS_TOPIC)?;
+
+// The full instance ID is schema_id + instance_segment
+let instance_id = "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0";
+
+// Register or look up via the types-registry
+let entity = registry.get(instance_id).await?;
+```
+
+The generated `.instance.json` file can also be loaded by the types-registry at bootstrap as seed data, or validated against its parent schema.
+
+### When to use this vs runtime registration
+
+| Use `#[gts_well_known_instance]` | Use `gts_make_instance_id()` + `register()` |
+|---|---|
+| Instance payload is **fully known at compile time** | Payload depends on **runtime config** (vendor, priority, etc.) |
+| Seed data, built-in defaults, test fixtures | Deployment-specific plugin registration |
+| Produces a static `.instance.json` file | Registers in-memory at module `init()` |
+
 ### Parameters
 
 | Parameter | Required | Description |
