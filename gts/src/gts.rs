@@ -354,6 +354,60 @@ pub struct GtsWildcard {
 }
 
 impl GtsWildcard {
+    /// Returns the non-wildcard prefix of a pattern string.
+    ///
+    /// For `"gts.x.core.srr.resource.v1~*"` returns `"gts.x.core.srr.resource.v1~"`.
+    /// For an exact pattern (no `*`) returns the full string.
+    fn prefix_str(pattern: &str) -> &str {
+        match pattern.find('*') {
+            Some(idx) => &pattern[..idx],
+            None => pattern,
+        }
+    }
+
+    /// Returns `true` if there is at least one GTS ID that matches **both** patterns.
+    ///
+    /// Two patterns overlap when one pattern's fixed prefix is a prefix of the
+    /// other's fixed prefix (or they share the same prefix), meaning there exists
+    /// at least one concrete GTS ID that satisfies both constraints.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let broad  = GtsWildcard::new("gts.x.core.srr.resource.v1~*")?;
+    /// let narrow = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.*")?;
+    /// assert!(broad.overlaps(&narrow));  // "acme.*" is a subset of "*"
+    ///
+    /// let other  = GtsWildcard::new("gts.x.core.other.resource.v1~*")?;
+    /// assert!(!broad.overlaps(&other));  // different base type — no overlap
+    /// ```
+    #[must_use]
+    pub fn overlaps(&self, other: &GtsWildcard) -> bool {
+        let a = Self::prefix_str(&self.id);
+        let b = Self::prefix_str(&other.id);
+        a.starts_with(b) || b.starts_with(a)
+    }
+
+    /// Returns `true` if every GTS ID matching `self` also matches `other`.
+    ///
+    /// In other words, `self` is a **narrower** (more specific) pattern than `other`:
+    /// the effective type set of `self` is a subset of the effective type set of `other`.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let broad  = GtsWildcard::new("gts.x.core.srr.resource.v1~*")?;
+    /// let narrow = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.*")?;
+    /// assert!(narrow.is_subset_of(&broad));
+    /// assert!(!broad.is_subset_of(&narrow));
+    /// ```
+    #[must_use]
+    pub fn is_subset_of(&self, other: &GtsWildcard) -> bool {
+        let a = Self::prefix_str(&self.id);
+        let b = Self::prefix_str(&other.id);
+        a.starts_with(b)
+    }
+
     /// Creates a new GTS wildcard pattern.
     ///
     /// # Errors
@@ -1268,5 +1322,95 @@ mod tests {
         // Wildcard at version position
         let result = GtsWildcard::new("gts.x.pkg.ns.type.*");
         assert!(result.is_ok());
+    }
+
+    // ---- overlaps ----
+
+    #[test]
+    fn test_overlaps_broad_and_narrow() {
+        let broad = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let narrow = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.*").expect("test");
+        assert!(broad.overlaps(&narrow));
+        assert!(narrow.overlaps(&broad)); // symmetric
+    }
+
+    #[test]
+    fn test_overlaps_disjoint_types() {
+        let a = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let b = GtsWildcard::new("gts.x.core.other.resource.v1~*").expect("test");
+        assert!(!a.overlaps(&b));
+        assert!(!b.overlaps(&a));
+    }
+
+    #[test]
+    fn test_overlaps_same_pattern() {
+        let a = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let b = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        assert!(a.overlaps(&b));
+    }
+
+    #[test]
+    fn test_overlaps_exact_vs_wildcard() {
+        let exact =
+            GtsWildcard::new("gts.x.core.srr.resource.v1~acme.crm._.contact.v1~").expect("test");
+        let broad = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        assert!(exact.overlaps(&broad));
+        assert!(broad.overlaps(&exact));
+    }
+
+    #[test]
+    fn test_overlaps_tilde_star_chain() {
+        // "~*" pattern: any chained type under the base
+        let base = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let sub = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.crm.*").expect("test");
+        assert!(base.overlaps(&sub));
+    }
+
+    // ---- is_subset_of ----
+
+    #[test]
+    fn test_subset_narrow_is_subset_of_broad() {
+        let broad = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let narrow = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.*").expect("test");
+        assert!(narrow.is_subset_of(&broad));
+        assert!(!broad.is_subset_of(&narrow));
+    }
+
+    #[test]
+    fn test_subset_identical_patterns() {
+        let a = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let b = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        assert!(a.is_subset_of(&b)); // identical ⊆ identical
+        assert!(b.is_subset_of(&a));
+    }
+
+    #[test]
+    fn test_subset_disjoint_not_subset() {
+        let a = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let b = GtsWildcard::new("gts.x.core.other.resource.v1~*").expect("test");
+        assert!(!a.is_subset_of(&b));
+        assert!(!b.is_subset_of(&a));
+    }
+
+    #[test]
+    fn test_subset_exact_is_subset_of_wildcard() {
+        let exact =
+            GtsWildcard::new("gts.x.core.srr.resource.v1~acme.crm._.contact.v1~").expect("test");
+        let broad = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        assert!(exact.is_subset_of(&broad));
+        assert!(!broad.is_subset_of(&exact));
+    }
+
+    #[test]
+    fn test_subset_three_levels() {
+        let l1 = GtsWildcard::new("gts.x.core.srr.resource.v1~*").expect("test");
+        let l2 = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.*").expect("test");
+        let l3 = GtsWildcard::new("gts.x.core.srr.resource.v1~acme.crm.*").expect("test");
+        assert!(l3.is_subset_of(&l2));
+        assert!(l3.is_subset_of(&l1));
+        assert!(l2.is_subset_of(&l1));
+        assert!(!l1.is_subset_of(&l2));
+        assert!(!l1.is_subset_of(&l3));
+        assert!(!l2.is_subset_of(&l3));
     }
 }
