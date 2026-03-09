@@ -11,8 +11,7 @@ use super::parser::ParsedInstance;
 /// Validates the output path against the sandbox boundary **before** any
 /// filesystem mutations (validate-before-mkdir policy).
 ///
-/// Injects the `"id"` field (composed as `schema_id + instance_segment`) into
-/// the JSON object before writing.
+/// Injects the `"id"` field into the JSON object before writing.
 ///
 /// Returns the written file path as a `String` on success.
 ///
@@ -23,9 +22,8 @@ pub fn generate_single_instance(
     output: Option<&str>,
     sandbox_root: &Path,
 ) -> Result<String> {
-    let composed = format!("{}{}", inst.attrs.schema_id, inst.attrs.instance_segment);
     let file_rel =
-        std::path::Path::new(&inst.attrs.dir_path).join(format!("{composed}.instance.json"));
+        std::path::Path::new(&inst.attrs.dir_path).join(format!("{}.instance.json", inst.attrs.id));
 
     let raw_output_path = if let Some(od) = output {
         Path::new(od).join(&file_rel)
@@ -60,7 +58,10 @@ pub fn generate_single_instance(
     // Build JSON with injected "id" field
     let mut obj: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(&inst.json_body)?;
-    obj.insert("id".to_owned(), serde_json::Value::String(composed));
+    obj.insert(
+        "id".to_owned(),
+        serde_json::Value::String(inst.attrs.id.clone()),
+    );
     let output_value = serde_json::Value::Object(obj);
 
     // Create parent directories only after sandbox validation passes
@@ -81,18 +82,14 @@ mod tests {
     use crate::gen_instances::attrs::InstanceAttrs;
     use tempfile::TempDir;
 
-    fn make_inst(
-        dir_path: &str,
-        schema_id: &str,
-        instance_segment: &str,
-        json_body: &str,
-        source_file: &str,
-    ) -> ParsedInstance {
+    fn make_inst(dir_path: &str, id: &str, json_body: &str, source_file: &str) -> ParsedInstance {
+        let tilde_pos = id.find('~').unwrap();
         ParsedInstance {
             attrs: InstanceAttrs {
                 dir_path: dir_path.to_owned(),
-                schema_id: schema_id.to_owned(),
-                instance_segment: instance_segment.to_owned(),
+                id: id.to_owned(),
+                schema_id: id[..=tilde_pos].to_owned(),
+                instance_segment: id[tilde_pos + 1..].to_owned(),
             },
             json_body: json_body.to_owned(),
             source_file: source_file.to_owned(),
@@ -108,8 +105,7 @@ mod tests {
 
         let inst = make_inst(
             "instances",
-            "gts.x.core.events.topic.v1~",
-            "x.commerce._.orders.v1.0",
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
             r#"{"name": "orders", "partitions": 16}"#,
             src.to_str().unwrap(),
         );
@@ -140,8 +136,7 @@ mod tests {
 
         let inst = make_inst(
             "../../etc",
-            "gts.x.core.events.topic.v1~",
-            "x.commerce._.orders.v1.0",
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
             r#"{"name": "x"}"#,
             src.to_str().unwrap(),
         );
@@ -164,8 +159,7 @@ mod tests {
 
         let inst = make_inst(
             "instances",
-            "gts.x.core.events.topic.v1~",
-            "x.commerce._.orders.v1.0",
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
             r#"{"name": "x"}"#,
             src.to_str().unwrap(),
         );

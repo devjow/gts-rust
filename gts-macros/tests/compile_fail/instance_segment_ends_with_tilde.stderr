@@ -1,5 +1,5 @@
-error: gts_well_known_instance: instance_segment must not end with '~' — that is a schema/type marker. Instance segments do not end with '~'
- --> tests/compile_fail/instance_segment_ends_with_tilde.rs:8:24
+error: gts_well_known_instance: id must not end with '~' (that is a schema/type ID, not an instance ID), got 'gts.x.core.events.topic.v1~'
+ --> tests/compile_fail/instance_segment_ends_with_tilde.rs:7:10
   |
-8 |     instance_segment = "x.commerce._.orders.v1~"
-  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+7 |     id = "gts.x.core.events.topic.v1~"
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

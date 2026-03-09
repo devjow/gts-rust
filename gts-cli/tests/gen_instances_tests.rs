@@ -40,17 +40,16 @@ fn write(dir: &Path, name: &str, content: &str) {
     fs::write(dir.join(name), content).unwrap();
 }
 
-fn instance_src(instance_segment: &str, json_body: &str) -> String {
+fn instance_src(id: &str, json_body: &str) -> String {
     format!(
         concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"{seg}\"\n",
+            "    id = \"{id}\"\n",
             ")]\n",
             "pub const INST: &str = {body};\n"
         ),
-        seg = instance_segment,
+        id = id,
         body = json_body
     )
 }
@@ -76,7 +75,7 @@ fn inst_path(root: &Path, id: &str) -> std::path::PathBuf {
 fn golden_single_instance() {
     let (_tmp, root) = sandbox();
     let src = instance_src(
-        "x.commerce._.orders.v1.0",
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
         r#""{\"name\":\"orders\",\"partitions\":16}""#,
     );
     write(&root, "events.rs", &src);
@@ -103,8 +102,7 @@ fn golden_raw_string_literal() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.payments.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.payments.v1.0\"\n",
         ")]\n",
         "pub const PAYMENTS: &str = r#\"{\"name\":\"payments\",\"partitions\":8}\"#;\n"
     );
@@ -132,14 +130,12 @@ fn multiple_instances_in_one_file() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const A: &str = \"{\\\"name\\\":\\\"orders\\\"}\";\n",
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.payments.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.payments.v1.0\"\n",
         ")]\n",
         "pub const B: &str = \"{\\\"name\\\":\\\"payments\\\"}\";\n"
     );
@@ -168,12 +164,18 @@ fn multiple_files_in_directory() {
     write(
         &root,
         "a.rs",
-        &instance_src("x.commerce._.orders.v1.0", "\"{\\\"name\\\":\\\"a\\\"}\""),
+        &instance_src(
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+            "\"{\\\"name\\\":\\\"a\\\"}\"",
+        ),
     );
     write(
         &root,
         "b.rs",
-        &instance_src("x.commerce._.payments.v1.0", "\"{\\\"name\\\":\\\"b\\\"}\""),
+        &instance_src(
+            "gts.x.core.events.topic.v1~x.commerce._.payments.v1.0",
+            "\"{\\\"name\\\":\\\"b\\\"}\"",
+        ),
     );
 
     run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap();
@@ -198,8 +200,7 @@ fn pub_crate_visibility_accepted() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub(crate) const FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -223,7 +224,7 @@ fn output_adjacent_to_source_when_no_override() {
         &subdir,
         "topic.rs",
         &instance_src(
-            "x.commerce._.orders.v1.0",
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
             "\"{\\\"name\\\":\\\"orders\\\"}\"",
         ),
     );
@@ -249,7 +250,7 @@ fn id_field_in_body_is_rejected() {
         &root,
         "events.rs",
         &instance_src(
-            "x.commerce._.orders.v1.0",
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
             "\"{\\\"id\\\":\\\"bad\\\",\\\"name\\\":\\\"x\\\"}\"",
         ),
     );
@@ -268,14 +269,12 @@ fn duplicate_instance_id_hard_error() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const A: &str = \"{\\\"name\\\":\\\"a\\\"}\";\n",
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const B: &str = \"{\\\"name\\\":\\\"b\\\"}\";\n"
     );
@@ -298,8 +297,7 @@ fn sandbox_escape_rejected() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"../../etc\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -324,8 +322,7 @@ fn exclude_pattern_skips_file() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"bad-no-tilde\",\n",
-        "    instance_segment = \"x.a.v1.0\"\n",
+        "    id = \"bad-no-tilde\"\n",
         ")]\n",
         "pub const X: &str = \"{}\";\n"
     );
@@ -351,8 +348,7 @@ fn gts_ignore_directive_skips_file() {
         "// gts:ignore\n",
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"bad-no-tilde\",\n",
-        "    instance_segment = \"x.a.v1.0\"\n",
+        "    id = \"bad-no-tilde\"\n",
         ")]\n",
         "pub const X: &str = \"{}\";\n"
     );
@@ -405,8 +401,7 @@ fn concat_macro_value_is_rejected() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const FOO: &str = concat!(\"{\", \"}\");\n"
     );
@@ -426,8 +421,7 @@ fn static_item_is_rejected() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub static FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -438,17 +432,16 @@ fn static_item_is_rejected() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// schema_id without trailing ~ is rejected
+// id without ~ separator is rejected
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn schema_id_without_tilde_is_rejected() {
+fn id_without_tilde_is_rejected() {
     let (_tmp, root) = sandbox();
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1.x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -459,17 +452,16 @@ fn schema_id_without_tilde_is_rejected() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// instance_segment with trailing ~ is rejected
+// id ending with ~ (schema/type, not instance) is rejected
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn instance_segment_with_tilde_is_rejected() {
+fn id_ending_with_tilde_is_rejected() {
     let (_tmp, root) = sandbox();
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1~\"\n",
+        "    id = \"gts.x.core.events.topic.v1~\"\n",
         ")]\n",
         "pub const FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -492,7 +484,10 @@ fn json_array_body_is_rejected() {
     write(
         &root,
         "events.rs",
-        &instance_src("x.commerce._.orders.v1.0", "\"[1,2,3]\""),
+        &instance_src(
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+            "\"[1,2,3]\"",
+        ),
     );
 
     let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
@@ -509,7 +504,10 @@ fn malformed_json_body_is_rejected() {
     write(
         &root,
         "events.rs",
-        &instance_src("x.commerce._.orders.v1.0", "\"{not valid json}\""),
+        &instance_src(
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+            "\"{not valid json}\"",
+        ),
     );
 
     let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
@@ -526,8 +524,7 @@ fn golden_file_content_exact() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const ORDERS: &str = \"{\\\"name\\\":\\\"orders\\\",\\\"partitions\\\":16}\";\n"
     );
@@ -565,8 +562,7 @@ fn zero_hash_raw_string_is_accepted() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const ZERO_HASH: &str = r#\"{\"name\":\"zero\"}\"#;\n"
     );
@@ -619,14 +615,12 @@ fn unsupported_form_in_comment_does_not_error() {
         "/// Example (do NOT use):\n",
         "/// #[gts_well_known_instance(\n",
         "///     dir_path = \"instances\",\n",
-        "///     schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "///     instance_segment = \"x.a.v1.0\"\n",
+        "///     id = \"gts.x.core.events.topic.v1~x.a.v1.0\"\n",
         "/// )]\n",
         "/// pub const BAD: &str = concat!(\"{\", \"}\");\n",
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const REAL: &str = \"{\\\"name\\\":\\\"real\\\"}\";\n"
     );
@@ -650,8 +644,7 @@ fn annotation_on_fn_is_hard_error() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub fn not_a_const() -> &'static str { \"{}\" }\n"
     );
@@ -677,8 +670,7 @@ fn duplicate_attribute_key_is_hard_error() {
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
         "    dir_path = \"other\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const DUP: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
     );
@@ -706,14 +698,12 @@ fn dot_slash_dir_path_same_id_is_duplicate() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const A: &str = \"{\\\"name\\\":\\\"a\\\"}\";\n",
         "#[gts_well_known_instance(\n",
         "    dir_path = \"./instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const B: &str = \"{\\\"name\\\":\\\"b\\\"}\";\n"
     );
@@ -738,8 +728,7 @@ fn qualified_path_form_is_accepted() {
     let src = concat!(
         "#[gts_macros::gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-        "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
         ")]\n",
         "pub const QUALIFIED: &str = r#\"{\"name\":\"qualified\"}\"#;\n"
     );
@@ -768,8 +757,7 @@ fn compile_fail_dir_is_auto_skipped() {
     let src = concat!(
         "#[gts_well_known_instance(\n",
         "    dir_path = \"instances\",\n",
-        "    schema_id = \"bad-no-tilde\",\n",
-        "    instance_segment = \"x.a.v1.0\"\n",
+        "    id = \"bad-no-tilde\"\n",
         ")]\n",
         "pub const X: &str = \"{}\";\n"
     );

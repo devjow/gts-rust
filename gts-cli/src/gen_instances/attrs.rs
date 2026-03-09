@@ -6,17 +6,22 @@ use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct InstanceAttrs {
     pub dir_path: String,
+    pub id: String,
+    /// Schema portion of `id` (up to and including `~`). Derived, used in tests/debug.
+    #[allow(dead_code)]
     pub schema_id: String,
+    /// Instance segment of `id` (after `~`). Derived, used in tests/debug.
+    #[allow(dead_code)]
     pub instance_segment: String,
 }
 
 /// Parse and validate instance annotation attribute body.
 ///
 /// # Errors
-/// - Any required attribute (`dir_path`, `schema_id`, `instance_segment`) is missing
-/// - `schema_id` does not end with `~`
-/// - `instance_segment` ends with `~` or is a bare wildcard `*`
-/// - The composed `schema_id + instance_segment` fails GTS ID validation
+/// - Any required attribute (`dir_path`, `id`) is missing
+/// - `id` does not contain `~`
+/// - `id` ends with `~` (that is a schema/type, not an instance)
+/// - The `id` fails GTS ID validation
 pub fn parse_instance_attrs(
     attr_body: &str,
     source_file: &str,
@@ -28,48 +33,45 @@ pub fn parse_instance_attrs(
         anyhow::anyhow!("{source_file}:{line}: Missing required attribute 'dir_path' in #[gts_well_known_instance]")
     })?;
 
-    let schema_id = extract_str_attr(attr_body, "schema_id").ok_or_else(|| {
-        anyhow::anyhow!("{source_file}:{line}: Missing required attribute 'schema_id' in #[gts_well_known_instance]")
+    let id = extract_str_attr(attr_body, "id").ok_or_else(|| {
+        anyhow::anyhow!(
+            "{source_file}:{line}: Missing required attribute 'id' in #[gts_well_known_instance]"
+        )
     })?;
 
-    let instance_segment = extract_str_attr(attr_body, "instance_segment").ok_or_else(|| {
-        anyhow::anyhow!("{source_file}:{line}: Missing required attribute 'instance_segment' in #[gts_well_known_instance]")
+    // Instance ID must contain ~ (separating schema from instance segment)
+    let tilde_pos = id.find('~').ok_or_else(|| {
+        anyhow::anyhow!(
+            "{source_file}:{line}: id '{id}' must contain '~' separating schema from instance segment"
+        )
     })?;
 
-    if !schema_id.ends_with('~') {
+    // Instance ID must NOT end with ~ (that would be a schema/type, not an instance)
+    if id.ends_with('~') {
         bail!(
-            "{source_file}:{line}: schema_id '{schema_id}' must end with '~' (type marker). \
-             Instance IDs are composed as schema_id + instance_segment."
+            "{source_file}:{line}: id '{id}' must not end with '~' \
+             (that is a schema/type ID, not an instance ID)"
         );
     }
 
-    if instance_segment.ends_with('~') {
-        bail!(
-            "{source_file}:{line}: instance_segment '{instance_segment}' must not end with '~' -- \
-             that is a schema/type marker, not valid in an instance segment."
-        );
-    }
+    // Split into schema portion and instance segment
+    let schema_id = id[..=tilde_pos].to_string();
+    let instance_segment = id[tilde_pos + 1..].to_string();
 
-    if instance_segment == "*" {
-        bail!(
-            "{source_file}:{line}: instance_segment must not be a bare wildcard '*'. \
-             Wildcards are not valid in generated instance IDs."
-        );
-    }
-
-    let composed = format!("{schema_id}{instance_segment}");
-    if let Err(e) = gts_id::validate_gts_id(&composed, false) {
+    // Validate the full ID
+    if let Err(e) = gts_id::validate_gts_id(&id, false) {
         let msg = match &e {
             gts_id::GtsIdError::Id { cause, .. } => cause.clone(),
             gts_id::GtsIdError::Segment { num, cause, .. } => {
                 format!("segment #{num}: {cause}")
             }
         };
-        bail!("{source_file}:{line}: Invalid composed instance ID '{composed}': {msg}");
+        bail!("{source_file}:{line}: Invalid instance ID '{id}': {msg}");
     }
 
     Ok(InstanceAttrs {
         dir_path,
+        id,
         schema_id,
         instance_segment,
     })
@@ -85,10 +87,7 @@ fn check_duplicate_attr_keys(attr_body: &str, source_file: &str, line: usize) ->
     let Some(re) = key_re else {
         return Ok(());
     };
-    let known: HashSet<&str> = ["dir_path", "schema_id", "instance_segment"]
-        .iter()
-        .copied()
-        .collect();
+    let known: HashSet<&str> = ["dir_path", "id"].iter().copied().collect();
     // Blank out string literal content so `key =` inside a value can't match.
     let stripped = blank_string_literals(attr_body);
     let mut seen: HashSet<String> = HashSet::new();
@@ -205,58 +204,49 @@ mod tests {
 
     #[test]
     fn test_parse_valid_attrs() {
-        let body = r#"dir_path = "instances", schema_id = "gts.x.core.events.topic.v1~", instance_segment = "x.commerce._.orders.v1.0""#;
+        let body =
+            r#"dir_path = "instances", id = "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0""#;
         let attrs = parse_instance_attrs(body, "test.rs", 1).unwrap();
         assert_eq!(attrs.dir_path, "instances");
+        assert_eq!(
+            attrs.id,
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0"
+        );
         assert_eq!(attrs.schema_id, "gts.x.core.events.topic.v1~");
         assert_eq!(attrs.instance_segment, "x.commerce._.orders.v1.0");
     }
 
     #[test]
     fn test_missing_dir_path() {
-        let body = r#"schema_id = "gts.x.foo.v1~", instance_segment = "x.bar.v1.0""#;
+        let body = r#"id = "gts.x.foo.v1~x.bar.v1.0""#;
         let err = parse_instance_attrs(body, "test.rs", 5).unwrap_err();
         assert!(err.to_string().contains("dir_path"));
     }
 
     #[test]
-    fn test_missing_schema_id() {
-        let body = r#"dir_path = "instances", instance_segment = "x.bar.v1.0""#;
+    fn test_missing_id() {
+        let body = r#"dir_path = "instances""#;
         let err = parse_instance_attrs(body, "test.rs", 5).unwrap_err();
-        assert!(err.to_string().contains("schema_id"));
+        assert!(err.to_string().contains("id"));
     }
 
     #[test]
-    fn test_missing_instance_segment() {
-        let body = r#"dir_path = "instances", schema_id = "gts.x.foo.v1~""#;
-        let err = parse_instance_attrs(body, "test.rs", 5).unwrap_err();
-        assert!(err.to_string().contains("instance_segment"));
-    }
-
-    #[test]
-    fn test_schema_id_missing_tilde() {
-        let body = r#"dir_path = "instances", schema_id = "gts.x.foo.v1", instance_segment = "x.bar.v1.0""#;
+    fn test_id_missing_tilde() {
+        let body = r#"dir_path = "instances", id = "gts.x.foo.v1.x.bar.v1.0""#;
         let err = parse_instance_attrs(body, "test.rs", 1).unwrap_err();
-        assert!(err.to_string().contains("must end with '~'"));
+        assert!(err.to_string().contains("'~'"));
     }
 
     #[test]
-    fn test_instance_segment_with_tilde() {
-        let body = r#"dir_path = "instances", schema_id = "gts.x.foo.v1~", instance_segment = "x.bar.v1~""#;
+    fn test_id_ends_with_tilde() {
+        let body = r#"dir_path = "instances", id = "gts.x.foo.v1~""#;
         let err = parse_instance_attrs(body, "test.rs", 1).unwrap_err();
         assert!(err.to_string().contains("must not end with '~'"));
     }
 
     #[test]
-    fn test_instance_segment_bare_wildcard() {
-        let body = r#"dir_path = "instances", schema_id = "gts.x.foo.v1~", instance_segment = "*""#;
-        let err = parse_instance_attrs(body, "test.rs", 1).unwrap_err();
-        assert!(err.to_string().contains("wildcard"));
-    }
-
-    #[test]
     fn test_error_contains_file_and_line() {
-        let body = r#"schema_id = "gts.x.foo.v1~", instance_segment = "x.bar.v1.0""#;
+        let body = r#"id = "gts.x.foo.v1~x.bar.v1.0""#;
         let err = parse_instance_attrs(body, "src/events.rs", 42).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("src/events.rs"));
@@ -265,10 +255,11 @@ mod tests {
 
     #[test]
     fn test_key_in_string_value_not_false_duplicate() {
-        // dir_path value contains "schema_id = x" — must not trigger a false duplicate.
-        let body = r#"dir_path = "schema_id = x", schema_id = "gts.x.core.events.topic.v1~", instance_segment = "x.commerce._.orders.v1.0""#;
+        // dir_path value contains "id = x" — must not trigger a false duplicate.
+        let body =
+            r#"dir_path = "id = x", id = "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0""#;
         let attrs = parse_instance_attrs(body, "test.rs", 1).unwrap();
-        assert_eq!(attrs.dir_path, "schema_id = x");
+        assert_eq!(attrs.dir_path, "id = x");
     }
 
     #[test]
@@ -276,19 +267,19 @@ mod tests {
         // Raw string content containing key= must be blanked so duplicate detection
         // can't see it. Attribute values always use regular "..." in practice, but
         // blank_string_literals is defensive.
-        // Input: r#"schema_id = x"# rest
-        let s = "r#\"schema_id = x\"# rest";
+        // Input: r#"id = x"# rest
+        let s = "r#\"id = x\"# rest";
         let blanked = blank_string_literals(s);
         // The content between r#" and "# must be spaces; the surrounding tokens intact.
         assert!(
-            !blanked.contains("schema_id"),
+            !blanked.contains("id = x"),
             "raw string content should be blanked, got: {blanked:?}"
         );
     }
 
     #[test]
     fn test_real_duplicate_key_is_rejected() {
-        let body = r#"dir_path = "instances", dir_path = "other", schema_id = "gts.x.core.events.topic.v1~", instance_segment = "x.commerce._.orders.v1.0""#;
+        let body = r#"dir_path = "instances", dir_path = "other", id = "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0""#;
         let err = parse_instance_attrs(body, "test.rs", 1).unwrap_err();
         assert!(err.to_string().contains("Duplicate attribute"));
     }

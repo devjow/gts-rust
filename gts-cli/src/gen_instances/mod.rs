@@ -86,14 +86,16 @@ fn check_duplicate_ids(instances: &[ParsedInstance]) -> Result<()> {
     let mut errors: Vec<String> = Vec::new();
 
     for inst in instances {
-        let composed = format!("{}{}", inst.attrs.schema_id, inst.attrs.instance_segment);
-        if let Some(prev) = id_seen.get(composed.as_str()) {
+        if let Some(prev) = id_seen.get(inst.attrs.id.as_str()) {
             errors.push(format!(
-                "Duplicate instance ID '{composed}':\n  first: {}\n  second: {}:{}",
-                prev, inst.source_file, inst.line
+                "Duplicate instance ID '{}':\n  first: {}\n  second: {}:{}",
+                inst.attrs.id, prev, inst.source_file, inst.line
             ));
         } else {
-            id_seen.insert(composed, format!("{}:{}", inst.source_file, inst.line));
+            id_seen.insert(
+                inst.attrs.id.clone(),
+                format!("{}:{}", inst.source_file, inst.line),
+            );
         }
     }
 
@@ -120,9 +122,8 @@ fn check_duplicate_output_paths(
     let mut errors: Vec<String> = Vec::new();
 
     for inst in instances {
-        let composed = format!("{}{}", inst.attrs.schema_id, inst.attrs.instance_segment);
-        let file_rel =
-            std::path::Path::new(&inst.attrs.dir_path).join(format!("{composed}.instance.json"));
+        let file_rel = std::path::Path::new(&inst.attrs.dir_path)
+            .join(format!("{}.instance.json", inst.attrs.id));
         let raw_path = if let Some(od) = output {
             Path::new(od).join(&file_rel)
         } else {
@@ -172,8 +173,7 @@ fn emit_instances(
     for inst in instances {
         let file_path = generate_single_instance(inst, output, sandbox_root)
             .map_err(|e| anyhow::anyhow!("{}: {}", inst.source_file, e))?;
-        let composed = format!("{}{}", inst.attrs.schema_id, inst.attrs.instance_segment);
-        println!("  Generated instance: {composed} @ {file_path}");
+        println!("  Generated instance: {} @ {file_path}", inst.attrs.id);
         count += 1;
     }
     Ok(count)
@@ -199,17 +199,16 @@ mod tests {
         fs::write(dir.join(name), content).unwrap();
     }
 
-    fn valid_src(instance_segment: &str, json_body: &str) -> String {
+    fn valid_src(id: &str, json_body: &str) -> String {
         format!(
             concat!(
                 "#[gts_well_known_instance(\n",
                 "    dir_path = \"instances\",\n",
-                "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-                "    instance_segment = \"{}\"\n",
+                "    id = \"{}\"\n",
                 ")]\n",
                 "pub const FOO: &str = {};\n"
             ),
-            instance_segment, json_body
+            id, json_body
         )
     }
 
@@ -222,7 +221,7 @@ mod tests {
             &root,
             "module.rs",
             &valid_src(
-                "x.commerce._.orders.v1.0",
+                "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
                 r#""{\"name\": \"orders\", \"partitions\": 16}""#,
             ),
         );
@@ -261,14 +260,12 @@ mod tests {
         let dup_src = concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
             ")]\n",
             "const A: &str = \"{\\\"name\\\": \\\"a\\\"}\";\n",
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
             ")]\n",
             "const B: &str = \"{\\\"name\\\": \\\"b\\\"}\";\n"
         );
@@ -302,8 +299,7 @@ mod tests {
             concat!(
                 "#[gts_well_known_instance(\n",
                 "    dir_path = \"instances\",\n",
-                "    schema_id = \"bad-no-tilde\",\n",
-                "    instance_segment = \"x.a.v1.0\"\n",
+                "    id = \"bad-no-tilde\"\n",
                 ")]\n",
                 "const X: &str = \"{}\";\n"
             ),

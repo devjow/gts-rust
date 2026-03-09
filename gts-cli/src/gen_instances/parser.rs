@@ -112,7 +112,7 @@ fn validate_json_body(json_body: &str, source_file: &str, line: usize) -> Result
     if json_val.get("id").is_some() {
         bail!(
             "{source_file}:{line}: Instance JSON body must not contain an \"id\" field. \
-             The id is automatically injected from schema_id + instance_segment. \
+             The id is automatically injected from the `id` attribute. \
              Remove the \"id\" field from the JSON body."
         );
     }
@@ -451,12 +451,11 @@ mod tests {
             concat!(
                 "#[gts_well_known_instance(\n",
                 "    dir_path = \"instances\",\n",
-                "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-                "    instance_segment = \"{}\"\n",
+                "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
                 ")]\n",
                 "const FOO: &str = {};\n"
             ),
-            "x.commerce._.orders.v1.0", body
+            body
         )
     }
 
@@ -525,6 +524,10 @@ mod tests {
         let content = src(r#""{\"name\": \"orders\"}""#);
         let result = extract_instances_from_source(&content, Path::new("t.rs")).unwrap();
         assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].attrs.id,
+            "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0"
+        );
         assert_eq!(result[0].attrs.schema_id, "gts.x.core.events.topic.v1~");
         assert_eq!(result[0].attrs.instance_segment, "x.commerce._.orders.v1.0");
     }
@@ -562,8 +565,7 @@ mod tests {
         let content = concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.foo.v1~\",\n",
-            "    instance_segment = \"x.bar.v1.0\"\n",
+            "    id = \"gts.x.foo.v1~x.bar.v1.0\"\n",
             ")]\n",
             "static FOO: &str = \"{}\";\n"
         );
@@ -576,8 +578,7 @@ mod tests {
         let content = concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.foo.v1~\",\n",
-            "    instance_segment = \"x.bar.v1.0\"\n",
+            "    id = \"gts.x.foo.v1~x.bar.v1.0\"\n",
             ")]\n",
             "const FOO: &str = concat!(\"{\", \"}\");\n"
         );
@@ -590,14 +591,12 @@ mod tests {
         let content = concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
             ")]\n",
             "const A: &str = \"{\\\"name\\\": \\\"orders\\\"}\";\n",
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"x.commerce._.payments.v1.0\"\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.payments.v1.0\"\n",
             ")]\n",
             "const B: &str = \"{\\\"name\\\": \\\"payments\\\"}\";\n"
         );
@@ -610,8 +609,7 @@ mod tests {
         let content = concat!(
             "#[gts_well_known_instance(\n",
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.core.events.topic.v1~\",\n",
-            "    instance_segment = \"x.commerce._.orders.v1.0\"\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
             ")]\n",
             "pub const FOO: &str = \"{\\\"name\\\": \\\"orders\\\"}\";\n"
         );
@@ -626,8 +624,7 @@ mod tests {
             "// line 2\n",
             "#[gts_well_known_instance(\n", // line 3
             "    dir_path = \"instances\",\n",
-            "    schema_id = \"gts.x.foo.v1~\",\n",
-            "    instance_segment = \"x.bar.v1.0\"\n",
+            "    id = \"gts.x.foo.v1~x.bar.v1.0\"\n",
             ")]\n",
             "const FOO: &str = \"{\\\"id\\\": \\\"bad\\\"}\";\n"
         );

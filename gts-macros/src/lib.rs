@@ -1848,8 +1848,7 @@ struct GtsInstanceArgs;
 impl Parse for GtsInstanceArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut dir_path: Option<String> = None;
-        let mut schema_id: Option<String> = None;
-        let mut instance_segment: Option<String> = None;
+        let mut id: Option<(String, proc_macro2::Span)> = None;
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         while !input.is_empty() {
@@ -1871,26 +1870,44 @@ impl Parse for GtsInstanceArgs {
                     let value: LitStr = input.parse()?;
                     dir_path = Some(value.value());
                 }
-                "schema_id" => {
+                "id" => {
                     let value: LitStr = input.parse()?;
-                    let id = value.value();
-                    // schema_id must end with ~ (type marker)
-                    if !id.ends_with('~') {
+                    let full_id = value.value();
+
+                    // Instance ID must contain ~ (separating schema from instance segment)
+                    let Some(tilde_pos) = full_id.find('~') else {
                         return Err(syn::Error::new_spanned(
                             value,
                             format!(
-                                "gts_well_known_instance: schema_id must end with '~' (type marker), got '{id}'"
+                                "gts_well_known_instance: id must contain '~' separating schema from instance segment, got '{full_id}'"
+                            ),
+                        ));
+                    };
+
+                    // Instance ID must NOT end with ~ (that would be a schema/type, not an instance)
+                    if full_id.ends_with('~') {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            format!(
+                                "gts_well_known_instance: id must not end with '~' (that is a schema/type ID, not an instance ID), got '{full_id}'"
                             ),
                         ));
                     }
-                    // General GTS ID validation
-                    if let Err(e) = gts_id::validate_gts_id(&id, false) {
+
+                    // Split into schema portion (up to and including ~) and instance segment
+                    let schema_part = &full_id[..=tilde_pos];
+                    let instance_part = &full_id[tilde_pos + 1..];
+
+                    // Validate schema portion
+                    if let Err(e) = gts_id::validate_gts_id(schema_part, false) {
                         let msg = match &e {
                             gts_id::GtsIdError::Id { cause, .. } => {
-                                format!("Invalid GTS schema ID: {cause}")
+                                format!("Invalid schema portion '{schema_part}': {cause}")
                             }
                             gts_id::GtsIdError::Segment { num, cause, .. } => {
-                                format!("Segment #{num}: {cause}")
+                                format!(
+                                    "Invalid schema portion '{schema_part}': Segment #{num}: {cause}"
+                                )
                             }
                         };
                         return Err(syn::Error::new_spanned(
@@ -1898,44 +1915,39 @@ impl Parse for GtsInstanceArgs {
                             format!("gts_well_known_instance: {msg}"),
                         ));
                     }
-                    schema_id = Some(id);
-                }
-                "instance_segment" => {
-                    let value: LitStr = input.parse()?;
-                    let seg = value.value();
 
-                    // Reject instance_segment ending with ~ (type/schema marker)
-                    if seg.ends_with('~') {
-                        return Err(syn::Error::new_spanned(
-                            value,
-                            "gts_well_known_instance: instance_segment must not end with '~' \u{2014} that is a schema/type marker. Instance segments do not end with '~'",
-                        ));
-                    }
-
-                    // Reject wildcard-only instance_segment
-                    if seg == "*" {
-                        return Err(syn::Error::new_spanned(
-                            value,
-                            "gts_well_known_instance: instance_segment must not be a bare wildcard '*'. Wildcards are not valid in generated instance IDs",
-                        ));
-                    }
-
-                    // Validate the segment using gts_id::validate_segment (no wildcards)
-                    if let Err(cause) = gts_id::validate_segment(2, &seg, false) {
+                    // Validate instance segment (no wildcards)
+                    if let Err(cause) = gts_id::validate_segment(2, instance_part, false) {
                         return Err(syn::Error::new_spanned(
                             value,
                             format!(
-                                "gts_well_known_instance: Invalid instance_segment '{seg}': {cause}"
+                                "gts_well_known_instance: Invalid instance segment '{instance_part}': {cause}"
                             ),
                         ));
                     }
 
-                    instance_segment = Some(seg);
+                    // Validate the full composed ID
+                    if let Err(e) = gts_id::validate_gts_id(&full_id, false) {
+                        let msg = match &e {
+                            gts_id::GtsIdError::Id { cause, .. } => {
+                                format!("Invalid instance ID '{full_id}': {cause}")
+                            }
+                            gts_id::GtsIdError::Segment { num, cause, .. } => {
+                                format!("Invalid instance ID '{full_id}': Segment #{num}: {cause}")
+                            }
+                        };
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            format!("gts_well_known_instance: {msg}"),
+                        ));
+                    }
+
+                    id = Some((full_id, value.span()));
                 }
                 _ => {
                     return Err(syn::Error::new_spanned(
                         key,
-                        "gts_well_known_instance: Unknown attribute. Expected: dir_path, schema_id, instance_segment",
+                        "gts_well_known_instance: Unknown attribute. Expected: dir_path, id",
                     ));
                 }
             }
@@ -1945,30 +1957,12 @@ impl Parse for GtsInstanceArgs {
             }
         }
 
-        // Validate composed instance ID after both parts are parsed
-        let schema_id_val = schema_id.ok_or_else(|| {
-            input.error("gts_well_known_instance: Missing required attribute: schema_id")
-        })?;
-        let instance_segment_val = instance_segment.ok_or_else(|| {
-            input.error("gts_well_known_instance: Missing required attribute: instance_segment")
+        let _id_val = id.ok_or_else(|| {
+            input.error("gts_well_known_instance: Missing required attribute: id")
         })?;
         let _dir_path_val = dir_path.ok_or_else(|| {
             input.error("gts_well_known_instance: Missing required attribute: dir_path")
         })?;
-
-        // Validate the composed instance ID (schema_id + instance_segment forms a valid GTS instance ID)
-        let composed = format!("{schema_id_val}{instance_segment_val}");
-        if let Err(e) = gts_id::validate_gts_id(&composed, false) {
-            let msg = match &e {
-                gts_id::GtsIdError::Id { cause, .. } => {
-                    format!("Invalid composed instance ID '{composed}': {cause}")
-                }
-                gts_id::GtsIdError::Segment { num, cause, .. } => {
-                    format!("Invalid composed instance ID '{composed}': Segment #{num}: {cause}")
-                }
-            };
-            return Err(input.error(format!("gts_well_known_instance: {msg}")));
-        }
 
         Ok(GtsInstanceArgs)
     }
@@ -1977,11 +1971,11 @@ impl Parse for GtsInstanceArgs {
 /// Declare a well-known GTS instance as a const JSON string literal.
 ///
 /// This macro:
-/// 1. **At compile time**: validates the `schema_id` and `instance_segment` GTS ID formats
+/// 1. **At compile time**: validates the `id` GTS instance ID format
 ///    and verifies the annotated item is a `const` of type `&str`.
 /// 2. **At generate time**: the CLI (`gts generate-from-rust --mode instances`) scans for
 ///    these annotations, validates the JSON payload, injects the `"id"` field, and writes
-///    `{dir_path}/{schema_id}{instance_segment}.instance.json`.
+///    `{dir_path}/{id}.instance.json`.
 ///
 /// The macro passes the annotated `const` item through unchanged -- it is purely metadata
 /// for the CLI extraction step.
@@ -1989,8 +1983,7 @@ impl Parse for GtsInstanceArgs {
 /// # Arguments
 ///
 /// * `dir_path` - Output directory for the generated instance file (relative to crate root or `--output`)
-/// * `schema_id` - GTS schema ID this instance conforms to (must end with `~`)
-/// * `instance_segment` - Appended to `schema_id` to form the full instance ID (must not end with `~`)
+/// * `id` - Full GTS instance ID (must contain `~` separating schema from instance segment, must not end with `~`)
 ///
 /// # Example
 ///
@@ -1999,8 +1992,7 @@ impl Parse for GtsInstanceArgs {
 ///
 /// #[gts_well_known_instance(
 ///     dir_path = "instances",
-///     schema_id = "gts.x.core.events.topic.v1~",
-///     instance_segment = "x.commerce._.orders.v1.0"
+///     id = "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0"
 /// )]
 /// const ORDERS_TOPIC: &str = r#"{
 ///     "name": "orders",
