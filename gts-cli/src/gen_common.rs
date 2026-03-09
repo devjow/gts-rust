@@ -274,37 +274,6 @@ pub fn safe_canonicalize_nonexistent(path: &Path) -> Result<PathBuf> {
     Ok(result)
 }
 
-/// Validate that the output path is within the sandbox boundary.
-/// Returns the safe canonical path on success.
-///
-/// # Errors
-/// Returns an error if the resolved path escapes the sandbox root.
-#[allow(dead_code)]
-pub fn validate_output_path_in_sandbox(
-    output_path: &Path,
-    sandbox_root: &Path,
-    annotation_name: &str,
-    source_file: &Path,
-    dir_path: &str,
-) -> Result<PathBuf> {
-    let canonical = safe_canonicalize_nonexistent(output_path)?;
-
-    if !canonical.starts_with(sandbox_root) {
-        bail!(
-            "Security error in {} - dir_path '{}' attempts to write outside sandbox boundary. \
-            Resolved to: {}, but must be within: {}",
-            source_file.display(),
-            dir_path,
-            canonical.display(),
-            sandbox_root.display(),
-            // annotation_name for diagnostics
-        );
-    }
-    let _ = annotation_name;
-
-    Ok(canonical)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

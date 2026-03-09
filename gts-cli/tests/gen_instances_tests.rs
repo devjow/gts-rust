@@ -294,20 +294,35 @@ fn duplicate_instance_id_hard_error() {
 #[test]
 fn sandbox_escape_rejected() {
     let (_tmp, root) = sandbox();
-    let src = concat!(
-        "#[gts_well_known_instance(\n",
-        "    dir_path = \"../../etc\",\n",
-        "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
-        ")]\n",
-        "pub const FOO: &str = \"{\\\"name\\\":\\\"x\\\"}\";\n"
+
+    // Use a unique escape target so we can assert it was NOT created on disk.
+    let escape_component = format!("gts_escape_{}", root.file_name().unwrap().to_string_lossy());
+    let escape_dir = format!("../{escape_component}");
+    let src = format!(
+        concat!(
+            "#[gts_well_known_instance(\n",
+            "    dir_path = \"{dir}\",\n",
+            "    id = \"gts.x.core.events.topic.v1~x.commerce._.orders.v1.0\"\n",
+            ")]\n",
+            "pub const FOO: &str = \"{{\\\"name\\\":\\\"x\\\"}}\";\n"
+        ),
+        dir = escape_dir
     );
-    write(&root, "escape.rs", src);
+    write(&root, "escape.rs", &src);
 
     let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("Security error") || msg.contains("sandbox") || msg.contains("'..'"),
         "Got: {msg}"
+    );
+
+    // Verify no out-of-sandbox directory was created as a side effect.
+    let outside = root.parent().unwrap().join(&escape_component);
+    assert!(
+        !outside.exists(),
+        "Sandbox escape created directory: {}",
+        outside.display()
     );
 }
 

@@ -546,6 +546,7 @@ gts generate-from-rust --source src/ --output out/ --mode instances
 - The JSON body **must not contain an `"id"` field** — the CLI injects it automatically from the `id` attribute.
 - Files in `compile_fail/` directories and files with a `// gts:ignore` directive are skipped.
 - Items behind `#[cfg(...)]` gates (e.g., `#[cfg(test)]`) are still extracted — extraction is lexical, not conditional.
+- **Schema conformance is not validated** — the macro validates the `id` format only. It does not validate the instance JSON body against its parent schema at compile time. This is a future enhancement.
 
 ### Compile-time validation errors
 

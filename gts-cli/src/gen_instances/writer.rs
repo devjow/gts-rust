@@ -1,10 +1,32 @@
 use anyhow::{Result, bail};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::gen_common::safe_canonicalize_nonexistent;
 
 use super::parser::ParsedInstance;
+
+/// Compute the raw output path for an instance file.
+///
+/// If `output` is provided, the file is placed under that directory.
+/// Otherwise, the file is placed adjacent to the source file.
+#[must_use]
+pub fn instance_output_path(
+    inst: &ParsedInstance,
+    output: Option<&str>,
+    sandbox_root: &Path,
+) -> PathBuf {
+    let file_rel = Path::new(&inst.attrs.dir_path).join(format!("{}.instance.json", inst.attrs.id));
+
+    if let Some(od) = output {
+        Path::new(od).join(&file_rel)
+    } else {
+        let src_dir = Path::new(&inst.source_file)
+            .parent()
+            .unwrap_or(sandbox_root);
+        src_dir.join(&file_rel)
+    }
+}
 
 /// Generate the instance JSON file for a single parsed annotation.
 ///
@@ -22,17 +44,7 @@ pub fn generate_single_instance(
     output: Option<&str>,
     sandbox_root: &Path,
 ) -> Result<String> {
-    let file_rel =
-        std::path::Path::new(&inst.attrs.dir_path).join(format!("{}.instance.json", inst.attrs.id));
-
-    let raw_output_path = if let Some(od) = output {
-        Path::new(od).join(&file_rel)
-    } else {
-        let src_dir = Path::new(&inst.source_file)
-            .parent()
-            .unwrap_or(sandbox_root);
-        src_dir.join(&file_rel)
-    };
+    let raw_output_path = instance_output_path(inst, output, sandbox_root);
 
     // Validate sandbox boundary BEFORE any filesystem writes
     let output_canonical = safe_canonicalize_nonexistent(&raw_output_path).map_err(|e| {
@@ -56,8 +68,16 @@ pub fn generate_single_instance(
     }
 
     // Build JSON with injected "id" field
-    let mut obj: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&inst.json_body)?;
+    let mut obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inst.json_body)
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "{}:{}: Failed to parse JSON body for instance '{}': {}",
+                inst.source_file,
+                inst.line,
+                inst.attrs.id,
+                e
+            )
+        })?;
     obj.insert(
         "id".to_owned(),
         serde_json::Value::String(inst.attrs.id.clone()),

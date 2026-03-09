@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::gen_common::{compute_sandbox_root, walk_rust_files};
 use parser::ParsedInstance;
-use writer::generate_single_instance;
+use writer::{generate_single_instance, instance_output_path};
 
 /// Generate GTS well-known instance files from Rust source code annotated with
 /// `#[gts_well_known_instance]`.
@@ -122,16 +122,7 @@ fn check_duplicate_output_paths(
     let mut errors: Vec<String> = Vec::new();
 
     for inst in instances {
-        let file_rel = std::path::Path::new(&inst.attrs.dir_path)
-            .join(format!("{}.instance.json", inst.attrs.id));
-        let raw_path = if let Some(od) = output {
-            Path::new(od).join(&file_rel)
-        } else {
-            let src_dir = Path::new(inst.source_file.as_str())
-                .parent()
-                .unwrap_or(sandbox_root);
-            src_dir.join(&file_rel)
-        };
+        let raw_path = instance_output_path(inst, output, sandbox_root);
         let key = raw_path
             .components()
             .collect::<std::path::PathBuf>()

@@ -1980,6 +1980,10 @@ impl Parse for GtsInstanceArgs {
 /// The macro passes the annotated `const` item through unchanged -- it is purely metadata
 /// for the CLI extraction step.
 ///
+/// **Note:** This macro validates the `id` *format* only (GTS ID structure). It does **not**
+/// validate the instance JSON body against its parent schema at compile time. Schema conformance
+/// validation is a future enhancement.
+///
 /// # Arguments
 ///
 /// * `dir_path` - Output directory for the generated instance file (relative to crate root or `--output`)
