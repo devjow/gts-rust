@@ -1982,7 +1982,8 @@ impl Parse for GtsInstanceArgs {
 ///
 /// **Note:** This macro validates the `id` *format* only (GTS ID structure). It does **not**
 /// validate the instance JSON body against its parent schema at compile time. Schema conformance
-/// validation is a future enhancement.
+/// validation is performed by the CLI (`gts generate-from-rust`) when schema files are present
+/// on disk (e.g. after `--mode all` or a prior `--mode schemas` run).
 ///
 /// # Arguments
 ///

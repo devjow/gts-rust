@@ -780,3 +780,255 @@ fn compile_fail_dir_is_auto_skipped() {
 
     run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schema validation – instance conforms to schema
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Helper: write a base GTS schema into `{root}/schemas/{schema_id}.schema.json`.
+fn write_schema(root: &Path, schema_id: &str, extra_props: &[(&str, &str)]) {
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "id".to_owned(),
+        serde_json::json!({ "type": "string", "format": "gts-instance-id" }),
+    );
+    let mut required = vec!["id".to_owned()];
+    for (name, ty) in extra_props {
+        props.insert((*name).to_owned(), serde_json::json!({ "type": *ty }));
+        required.push((*name).to_owned());
+    }
+    required.sort();
+    let schema = serde_json::json!({
+        "$id": format!("gts://{schema_id}"),
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": props,
+        "required": required
+    });
+    let dir = root.join("schemas");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join(format!("{schema_id}.schema.json")),
+        serde_json::to_string_pretty(&schema).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn schema_validation_valid_instance_passes() {
+    let (_tmp, root) = sandbox();
+
+    write_schema(
+        &root,
+        "gts.x.core.events.topic.v1~",
+        &[("name", "string"), ("partitions", "integer")],
+    );
+
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+        r#""{\"name\":\"orders\",\"partitions\":16}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap();
+}
+
+#[test]
+fn schema_validation_missing_required_field_fails() {
+    let (_tmp, root) = sandbox();
+
+    // Schema requires "name" and "vendor"
+    write_schema(
+        &root,
+        "gts.x.core.events.topic.v1~",
+        &[("name", "string"), ("vendor", "string")],
+    );
+
+    // Instance provides "name" but NOT "vendor"
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+        r#""{\"name\":\"orders\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema validation error"),
+        "Expected schema validation error, got: {msg}"
+    );
+}
+
+#[test]
+fn schema_validation_extra_field_fails() {
+    let (_tmp, root) = sandbox();
+
+    // Schema only allows "name" (plus "id")
+    write_schema(&root, "gts.x.core.events.topic.v1~", &[("name", "string")]);
+
+    // Instance has "name" + "extra" — violates additionalProperties: false
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+        r#""{\"name\":\"orders\",\"extra\":\"bad\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema validation error"),
+        "Expected schema validation error, got: {msg}"
+    );
+}
+
+#[test]
+fn schema_validation_wrong_type_fails() {
+    let (_tmp, root) = sandbox();
+
+    // Schema requires "count" as integer
+    write_schema(
+        &root,
+        "gts.x.core.events.topic.v1~",
+        &[("count", "integer")],
+    );
+
+    // Instance provides "count" as a string
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+        r#""{\"count\":\"not-a-number\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema validation error"),
+        "Expected schema validation error, got: {msg}"
+    );
+}
+
+#[test]
+fn schema_validation_allof_ref_inheritance_passes() {
+    let (_tmp, root) = sandbox();
+    let dir = root.join("schemas");
+    fs::create_dir_all(&dir).unwrap();
+
+    // Parent schema (open — no additionalProperties: false, required for allOf inheritance)
+    let parent = serde_json::json!({
+        "$id": "gts://gts.x.core.events.topic.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "format": "gts-instance-id" },
+            "name": { "type": "string" }
+        },
+        "required": ["id", "name"]
+    });
+    fs::write(
+        dir.join("gts.x.core.events.topic.v1~.schema.json"),
+        serde_json::to_string_pretty(&parent).unwrap(),
+    )
+    .unwrap();
+
+    // Child schema: inherits parent via allOf + $ref, adds "vendor"
+    let child = serde_json::json!({
+        "$id": "gts://gts.x.core.events.topic.v1~x.core.audit.event.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "allOf": [
+            { "$ref": "gts://gts.x.core.events.topic.v1~" },
+            {
+                "type": "object",
+                "properties": { "vendor": { "type": "string" } },
+                "required": ["vendor"]
+            }
+        ]
+    });
+    fs::write(
+        dir.join("gts.x.core.events.topic.v1~x.core.audit.event.v1~.schema.json"),
+        serde_json::to_string_pretty(&child).unwrap(),
+    )
+    .unwrap();
+
+    // Instance satisfies both parent ("name") and child ("vendor")
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.core.audit.event.v1~x.commerce._.orders.v1.0",
+        r#""{\"name\":\"orders\",\"vendor\":\"acme\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap();
+}
+
+#[test]
+fn schema_validation_allof_ref_missing_parent_field_fails() {
+    let (_tmp, root) = sandbox();
+    let dir = root.join("schemas");
+    fs::create_dir_all(&dir).unwrap();
+
+    // Parent schema (open — no additionalProperties: false)
+    let parent = serde_json::json!({
+        "$id": "gts://gts.x.core.events.topic.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "format": "gts-instance-id" },
+            "name": { "type": "string" }
+        },
+        "required": ["id", "name"]
+    });
+    fs::write(
+        dir.join("gts.x.core.events.topic.v1~.schema.json"),
+        serde_json::to_string_pretty(&parent).unwrap(),
+    )
+    .unwrap();
+
+    // Child schema: inherits parent via allOf + $ref, adds "vendor"
+    let child = serde_json::json!({
+        "$id": "gts://gts.x.core.events.topic.v1~x.core.audit.event.v1~",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "allOf": [
+            { "$ref": "gts://gts.x.core.events.topic.v1~" },
+            {
+                "type": "object",
+                "properties": { "vendor": { "type": "string" } },
+                "required": ["vendor"]
+            }
+        ]
+    });
+    fs::write(
+        dir.join("gts.x.core.events.topic.v1~x.core.audit.event.v1~.schema.json"),
+        serde_json::to_string_pretty(&child).unwrap(),
+    )
+    .unwrap();
+
+    // Instance has "vendor" but missing parent-required "name"
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.core.audit.event.v1~x.commerce._.orders.v1.0",
+        r#""{\"vendor\":\"acme\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    let err = run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("schema validation error"),
+        "Expected schema validation error, got: {msg}"
+    );
+}
+
+#[test]
+fn schema_validation_no_schema_on_disk_passes() {
+    let (_tmp, root) = sandbox();
+
+    // No schema written — validation should be skipped silently
+    let src = instance_src(
+        "gts.x.core.events.topic.v1~x.commerce._.orders.v1.0",
+        r#""{\"name\":\"orders\"}""#,
+    );
+    write(&root, "inst.rs", &src);
+
+    run(root.to_str().unwrap(), Some(root.to_str().unwrap()), &[]).unwrap();
+}

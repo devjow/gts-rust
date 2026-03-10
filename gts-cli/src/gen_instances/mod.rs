@@ -1,5 +1,6 @@
 pub mod attrs;
 pub mod parser;
+pub mod schema_check;
 pub mod string_lit;
 pub mod writer;
 
@@ -27,6 +28,7 @@ use writer::{generate_single_instance, instance_output_path};
 /// - Duplicate instance IDs are detected (hard error, both locations reported)
 /// - Duplicate output paths are detected
 /// - Any output path escapes the sandbox boundary
+/// - Any instance fails schema validation (when schemas are present on disk)
 /// - File I/O fails
 pub fn generate_instances_from_rust(
     source: &str,
@@ -73,6 +75,7 @@ pub fn generate_instances_from_rust(
 
     check_duplicate_ids(&all_instances)?;
     check_duplicate_output_paths(&all_instances, output, &sandbox_root)?;
+    schema_check::validate_instances_against_schemas(&all_instances, &sandbox_root)?;
 
     let instances_generated = emit_instances(&all_instances, output, &sandbox_root)?;
 

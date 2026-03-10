@@ -68,21 +68,15 @@ pub fn generate_single_instance(
     }
 
     // Build JSON with injected "id" field
-    let mut obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inst.json_body)
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "{}:{}: Failed to parse JSON body for instance '{}': {}",
-                inst.source_file,
-                inst.line,
-                inst.attrs.id,
-                e
-            )
-        })?;
-    obj.insert(
-        "id".to_owned(),
-        serde_json::Value::String(inst.attrs.id.clone()),
-    );
-    let output_value = serde_json::Value::Object(obj);
+    let output_value = build_instance_value(inst).map_err(|e| {
+        anyhow::anyhow!(
+            "{}:{}: Failed to parse JSON body for instance '{}': {}",
+            inst.source_file,
+            inst.line,
+            inst.attrs.id,
+            e
+        )
+    })?;
 
     // Create parent directories only after sandbox validation passes
     if let Some(parent) = raw_output_path.parent() {
@@ -94,6 +88,23 @@ pub fn generate_single_instance(
     )?;
 
     Ok(raw_output_path.display().to_string())
+}
+
+/// Parse the instance JSON body and inject the `"id"` field.
+///
+/// This is the single source of truth for building the complete instance JSON value.
+/// Used by both `generate_single_instance` (file emission) and `schema_check` (validation).
+///
+/// # Errors
+/// Returns an error if the JSON body cannot be parsed as an object.
+pub fn build_instance_value(inst: &ParsedInstance) -> serde_json::Result<serde_json::Value> {
+    let mut obj: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&inst.json_body)?;
+    obj.insert(
+        "id".to_owned(),
+        serde_json::Value::String(inst.attrs.id.clone()),
+    );
+    Ok(serde_json::Value::Object(obj))
 }
 
 #[cfg(test)]
